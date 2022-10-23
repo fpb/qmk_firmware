@@ -908,6 +908,11 @@ ifeq ($(strip $(BLUETOOTH_ENABLE)), yes)
         SRC += $(DRIVER_PATH)/bluetooth/bluetooth.c
         SRC += $(DRIVER_PATH)/bluetooth/rn42.c
     endif
+
+	ifeq ($(strip $(BLUETOOTH_DRIVER)), ITON_BT)
+        OPT_DEFS += -DBLUETOOTH_ITON_BT
+        SRC += $(DRIVER_PATH)/bluetooth/iton_bt.c
+    endif
 endif
 
 ifeq ($(strip $(ENCODER_ENABLE)), yes)
