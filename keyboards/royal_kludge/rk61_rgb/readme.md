@@ -10,7 +10,7 @@ Tested on the Royal Kludge RK61 non-hotswap RGB dual-mode edition, original PID 
 - PCB: RK61-JX-RGB-HFD; REV: 01; 2019/08/13
 - Wired only, no bluetooth support.
 
-Updated to work with SonixQMK/qmk_firmware:sn32_develop branch. Based on previous work by [euwbah](https://github.com/euwbah). Added VIA support. Added VIA support. Added VIA support. Added VIA 3.0 support.
+Updated to work with SonixQMK/qmk_firmware:sn32_develop branch. Based on previous work by [euwbah](https://github.com/euwbah). Added VIA support. Added VIA 3.0 support.
 
 Keyboard Maintainer: [fpb](https://github.com/fpb)
 
