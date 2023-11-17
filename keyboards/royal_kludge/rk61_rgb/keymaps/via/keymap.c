@@ -35,7 +35,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         {   KC_GRV,     KC_F1,          KC_F2,          KC_F3,      KC_F4,      KC_F5,      KC_F6,      KC_F7,      KC_F8,      KC_F9,      KC_F10,     KC_F11,     KC_F12,     KC_DEL,  },
         {   KC_TRNS,    KC_F13,         KC_F14,         KC_F15,     KC_F16,     KC_F17,     KC_PSCR,    KC_SCRL,    KC_PAUS,    RGB_HUD,    RGB_HUI,    RGB_VAD,    RGB_VAI,    RGB_MOD, },
         {   QK_BOOT,    DF(_WIN_BASE),  KC_NO,          KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_INS,     KC_HOME,    KC_PGUP,    KC_TRNS,    RGB_SPD,    RGB_SPI,    KC_TRNS,    KC_TRNS, },
-        {   KC_TRNS,    KC_NO,          KC_MUTE,        KC_VOLD,    KC_VOLU,    KC_MPRV,    KC_MNXT,    KC_DEL,     KC_END,     KC_PGDN,    KC_TRNS,    KC_UP,      KC_TRNS,    KC_TRNS, },
+        {   KC_TRNS,    KC_NO,          KC_MUTE,        KC_VOLD,    KC_VOLU,    KC_MPRV,    KC_MNXT,    KC_DEL,     KC_END,     KC_PGDN,    RGB_HUI,    KC_UP,      KC_TRNS,    KC_TRNS, },
         {   KC_TRNS,    KC_TRNS,        KC_TRNS,        KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_LEFT,    KC_DOWN,    KC_RIGHT,   KC_TRNS,    KC_TRNS, }
     },
     [_WIN_BASE] = {
@@ -49,7 +49,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         {   KC_GRV,     KC_F1,          KC_F2,          KC_F3,      KC_F4,      KC_F5,      KC_F6,      KC_F7,      KC_F8,      KC_F9,      KC_F10,     KC_F11,     KC_F12,     KC_DEL,  },
         {   KC_TRNS,    KC_F13,         KC_F14,         KC_F15,     KC_F16,     KC_F17,     KC_PSCR,    KC_SCRL,    KC_PAUS,    RGB_HUD,    RGB_HUI,    RGB_VAD,    RGB_VAI,    RGB_MOD, },
         {   QK_BOOT,    KC_NO,          DF(_MAC_BASE),  KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_INS,     KC_HOME,    KC_PGUP,    KC_TRNS,    RGB_SPD,    RGB_SPI,    KC_TRNS,    KC_TRNS, },
-        {   KC_TRNS,    KC_NO,          KC_MUTE,        KC_VOLD,    KC_VOLU,    KC_MPRV,    KC_MNXT,    KC_DEL,     KC_END,     KC_PGDN,    KC_TRNS,    KC_UP,      KC_TRNS,    KC_TRNS, },
+        {   KC_TRNS,    KC_NO,          KC_MUTE,        KC_VOLD,    KC_VOLU,    KC_MPRV,    KC_MNXT,    KC_DEL,     KC_END,     KC_PGDN,    RGB_HUI,    KC_UP,      KC_TRNS,    KC_TRNS, },
         {   KC_TRNS,    KC_TRNS,        KC_TRNS,        KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_TRNS,    KC_LEFT,    KC_DOWN,    KC_RIGHT,   KC_TRNS,    KC_TRNS, }
     }
 };
