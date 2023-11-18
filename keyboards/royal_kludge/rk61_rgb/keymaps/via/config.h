@@ -15,6 +15,3 @@
  */
 
 #pragma once
-
-/* Enable VIA RGB matrix and configure EEPROM emulation for VIA */
-#define VIA_QMK_RGBLIGHT_ENABLE
