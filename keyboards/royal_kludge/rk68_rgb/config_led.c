@@ -40,7 +40,7 @@ led_config_t g_led_config = {
     {
         4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,
         4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,
-        4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,          4,    4,
+        8,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,          4,    4,
         4,          4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,    4,
         4,    4,    4,                      4,                4,    4,    4,    4,    4,    4,
 	}
@@ -48,7 +48,7 @@ led_config_t g_led_config = {
 
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
-        // Set capslock key to orange (capslock is led number 44)
+        // Set capslock key to orange (capslock is led number 30)
         rgb_matrix_set_color(30, 255, 130, 15);
     }
     return false;
