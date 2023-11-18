@@ -1,6 +1,6 @@
 # RK68 RGB
 
-![RK68 RGB](./imgs/IMG_20210321_025644.jpg)
+![RK68 RGB](https://i.ibb.co/bLYNDjb/IMG-20210321-025644.jpg)
 
 Royal Kludge RK68 hotswap dual mode, rgb edition, original PID 0x24F. Later updated to 0x8016.
 
@@ -39,14 +39,14 @@ Enter the bootloader:
 - Physical reset: short the two pins on the underside of the pcb, as indicated below. You need to remove some keycaps and 6 screws to be able to flip the PCB.
 - Layout (after loading QMK): FN + CTRL
 
-![Bootloader mode](./imgs/bootmode.jpg)
+![Bootloader mode](https://i.ibb.co/BT7sj31/bootmode.jpg)
 
 ## Keymaps
 
 Keysmaps are identical in both VIA and default layouts. VIA version has one additional empty layer to customize.
 
-![Layer 0](./imgs/layer0.jpg)
-![Layer 1](./imgs/layer1.jpg)
+![Layer 0](https://i.ibb.co/9wXbcmM/layer0.jpg)
+![Layer 1](https://i.ibb.co/q9T33QJ/layer1.jpg)
 
 ## VIA Json file
 
@@ -56,4 +56,4 @@ You need [this json file](./keymaps/via/rk68-rgb_via.json) to add your keyboard 
 
 Here is a picture of my RK68 with Mac style keycaps...
 
-![RK68 RGB running QMK/VIA firmware](./imgs/IMG_20231118_133253.jpg)
+![RK68 RGB running QMK/VIA firmware](https://i.ibb.co/HCrk3D3/IMG-20231118-133253.jpg)
