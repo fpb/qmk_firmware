@@ -20,7 +20,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Backlight configuration
 #define RGB_MATRIX_FRAMEBUFFER_EFFECTS
 #define RGB_MATRIX_KEYPRESSES
-#define RGB_MATRIX_MAXIMUM_BRIGHTNESS 255
 #define RGBLIGHT_HUE_STEP 10
 #define RGBLIGHT_LIMIT_VAL 255
 #define RGBLIGHT_SAT_STEP 17
