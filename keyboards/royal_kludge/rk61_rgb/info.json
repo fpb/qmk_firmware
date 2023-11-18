@@ -8,7 +8,7 @@
     "processor": "SN32F248BF",
     "usb": {
         "vid": "0x0C45",
-        "pid": "0x024F",
+        "pid": "0x8016",
         "device_version": "1.0.0",
         "force_nkro": true
     },

@@ -1,7 +1,7 @@
 {
     "name": "Royal Kludge RK61 RGB",
     "vendorId": "0x0C45",
-    "productId": "0x024F",
+    "productId": "0x8016",
     "menus": ["qmk_rgb_matrix"],
     "matrix": {"rows": 5, "cols": 14},
     "layouts": {
