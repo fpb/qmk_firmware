@@ -4,13 +4,13 @@
 
 Royal Kludge RK61 non-hotswap rgb edition, original PID 0x24F.
 
-Tested on the Royal Kludge RK61 non-hotswap RGB dual-mode edition, original PID 0x24F (2019/11/04 PCB)
+Tested on the Royal Kludge RK61 non-hotswap RGB dual-mode edition, original PID 0x24F
 
 - MCU: HFD2201KBA (rebrand SN32F248BF)
 - PCB: RK61-JX-RGB-HFD; REV: 01; 2019/08/13
 - Wired only, no bluetooth support.
 
-Updated to work with SonixQMK/qmk_firmware:sn32_develop branch. Based on previous work by [euwbah](https://github.com/euwbah). Added VIA support. Added VIA 3.0 support.
+Based on previous work by [euwbah](https://github.com/euwbah). Added VIA 3.0 support.
 
 Keyboard Maintainer: [fpb](https://github.com/fpb)
 
@@ -36,4 +36,4 @@ See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_to
 Enter the bootloader:
 
 - Physical reset: short the two contacts to the left of the space bar switch with a wire/paperclip. Accessible from the front.
-- Layout (after loading QMK): FN + CapsLock
+- Layout (after loading QMK): FN + Left Control
