@@ -22,12 +22,4 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # include "rgb_matrix.h"
 # include "config_led.h"
 
-bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
-    if (host_keyboard_led_state().caps_lock) {
-        // Set capslock key to orange (capslock is led number 28)
-        rgb_matrix_set_color(28, 255, 130, 15);
-    }
-    return false;
-}
-
 #endif

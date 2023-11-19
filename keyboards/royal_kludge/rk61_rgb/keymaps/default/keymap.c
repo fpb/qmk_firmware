@@ -33,4 +33,10 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     )
 };
 
-/* vim: set noai ts=4 sw=4: */
+bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
+    if (host_keyboard_led_state().caps_lock) {
+        // Set capslock key to orange (capslock is led number 30)
+        rgb_matrix_set_color(28, 255, 130, 15);
+    }
+    return false;
+}
