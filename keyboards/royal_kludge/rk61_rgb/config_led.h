@@ -20,8 +20,3 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Backlight configuration
 #define RGB_MATRIX_FRAMEBUFFER_EFFECTS
 #define RGB_MATRIX_KEYPRESSES
-
-#define SN32_RGB_MATRIX_ROW_PINS { C5, C4, C6, C8, C7, C9, C11, C10, C12, C14, C13, B13, B15, D3, B14 }
-#define RGB_MATRIX_LED_COUNT (70)
-
-#define DRIVER_LED_TOTAL (70)
