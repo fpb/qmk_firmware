@@ -26,3 +26,4 @@
 /* Configure the effects:                                              */
 #define RGB_MATRIX_TYPING_HEATMAP_DECREASE_DELAY_MS 50
 
+#define DYNAMIC_KEYMAP_LAYER_COUNT 3
