@@ -22,16 +22,16 @@
 #define USER00 SAFE_RANGE
 #endif
 
-enum rk68_keycodes {
+enum rk61_keycodes {
     BT_PROFILE1 = USER00,
     BT_PROFILE2,
     BT_PROFILE3,
-    BT_PROFILE4,
-    BT_PROFILE5,
+    // BT_PROFILE4,
+    // BT_PROFILE5,
     BT_PAIR,
     BT_TOGGLE,
     BT_RESET,
-    RK68_SAFE_RANGE
+    RK61_SAFE_RANGE
 };
 
 #if defined(KEYBOARD_royal_kludge_rk68_rgb)

@@ -1,0 +1,2 @@
+#define DRIVER_LED_TOTAL (61)
+

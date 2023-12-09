@@ -14,7 +14,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "rk68.h"
+#include "rk61.h"
 #ifdef BLUETOOTH_ENABLE
 #include "outputselect.h"
 #include "iton_bt.h"
@@ -33,12 +33,12 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             case BT_PROFILE3:
                 iton_bt_switch_profile(2);
                 break;
-            case BT_PROFILE4:
-                iton_bt_switch_profile(3);
-                break;
-            case BT_PROFILE5:
-                iton_bt_switch_profile(4);
-                break;
+            // case BT_PROFILE4:
+            //     iton_bt_switch_profile(3);
+            //     break;
+            // case BT_PROFILE5:
+            //     iton_bt_switch_profile(4);
+            //     break;
             case BT_PAIR:
                 iton_bt_enter_pairing();
                 break;

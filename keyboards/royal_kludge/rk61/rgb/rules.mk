@@ -9,7 +9,6 @@ TOP_SYMBOLS = yes
 #
 MAGIC_ENABLE 			= yes
 MAGIC_KEYCODE_ENABLE 	= yes
-
 VIA_ENABLE 				= no
 
 EEPROM_DRIVER = wear_leveling
@@ -21,5 +20,5 @@ KEYBOARD_SHARED_EP 		= yes
 BLUETOOTH_ENABLE 		= yes
 BLUETOOTH_DRIVER		= ItonBT
 
-DEFAULT_FOLDER = royal_kludge/rk68/rgb/ansi
+DEFAULT_FOLDER = royal_kludge/rk61/rgb/ansi
 
