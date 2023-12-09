@@ -79,13 +79,13 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
      * │   │BRU│BRD│TSK│FLX│VAD│VAI│PRV│PLY│NXT│MTE│VLD│VLU│       │PrS│
      * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
-     * │     │   │   │   │   │   │   │   │   │   │INS│DEL│END│     │   │
+     * │     │BT1│BT2│BT3│BT4│BT5│   │   │   │   │PAI│HOM│END│ MOD │Ins│
      * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┼───┤
-     * │      │   │   │   │   │   │   │   │   │   │   │   │        │   │
+     * │      │   │MAC│   │   │   │   │   │   │   │   │   │        │Pau│
      * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
-     * │        │   │   │   │   │   │   │   │   │   │   │      │   │   │
+     * │        │   │   │   │   │   │   │   │   │   │   │ MO(5)│VAI│Scr│
      * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │    │    │    │                        │Alt│   │   │   │   │   │
+     * │    │    │    │                        │   │   │   │SPD│VAD│SPI│
      * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
      */
     [WINFN] = LAYOUT_65_ansi(
@@ -119,13 +119,13 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
      * │`~ │BRU│BRD│TSK│FLX│VAD│VAI│PRV│PLY│NXT│MTE│VLD│VLU│       │TOG│
      * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
-     * │     │   │   │   │   │   │   │   │   │   │INS│DEL│END│     │   │
+     * │     │BT1│BT2│BT3│BT4│BT5│   │   │   │   │PAI│HOM│END│ MOD │Ins│
      * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┼───┤
-     * │      │   │   │   │   │   │   │   │   │   │   │   │        │   │
+     * │      │WIN│   │   │   │   │   │   │   │   │   │   │        │Pau│
      * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
-     * │        │   │   │   │   │   │   │   │   │   │   │      │   │   │
+     * │        │   │   │   │   │   │   │   │   │   │   │      │VAI│Scr│
      * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │    │    │    │                        │   │   │   │   │   │   │
+     * │    │    │    │                        │   │   │   │SPD│VAD│SPI│
      * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
      */
     [MACFN] = LAYOUT_65_ansi(
@@ -143,9 +143,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┼───┤
      * │      │   │   │   │   │   │   │   │   │   │   │   │        │   │
      * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
-     * │        │   │   │   │   │   │   │   │   │   │   │        ↑ │   │
+     * │        │   │   │   │   │   │   │   │   │   │   │      │SAI│   │
      * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │    │    │    │                        │   │   │   │ ← │ ↓ │ → │
+     * │    │    │    │                        │   │   │   │   │SAD│   │
      * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
      */
     [FNS] = LAYOUT_65_ansi(
@@ -188,15 +188,15 @@ bool dip_switch_update_user(uint8_t index, bool active) {
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
         case KC_WIN:
-        if(record->event.pressed) {
-            set_single_persistent_default_layer(WINBASE);
-        }
-        return false;
+            if(record->event.pressed) {
+                set_single_persistent_default_layer(WINBASE);
+            }
+            return false;
         case KC_MAC:
-        if(record->event.pressed) {
-            set_single_persistent_default_layer(MACBASE);
-        }
-        return false;
+            if(record->event.pressed) {
+                set_single_persistent_default_layer(MACBASE);
+            }
+            return false;
         case KC_MISSION_CONTROL:
             if (record->event.pressed) {
                 host_consumer_send(0x29F);
