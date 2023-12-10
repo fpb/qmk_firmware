@@ -12,7 +12,7 @@
         "device_version": "1.0.0"
     },
     "dynamic_keymap": {
-        "layer_count": 4
+        "layer_count": 5
     },
     "features": {
         "audio": false,

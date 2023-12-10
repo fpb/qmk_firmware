@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "outputselect.h"
 #endif
 
+#define CAPS_LOCK_LED   30
+
 // Each layer gets a name for readability, which is then used in the keymap matrix below.
 // The underscores don't mean anything - you can have a layer called STUFF or any other name.
 // Layer names don't all need to be of the same length, obviously, and you can also skip them
@@ -220,9 +222,9 @@ bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
         // Set capslock key to orange (capslock is led number 30)
         if(where_to_send() == OUTPUT_BLUETOOTH)
-            rgb_matrix_set_color(30, 3, 131, 251);
+            rgb_matrix_set_color(CAPS_LOCK_LED, 3, 131, 251);
         else
-            rgb_matrix_set_color(30, 255, 0, 0);
+            rgb_matrix_set_color(CAPS_LOCK_LED, 255, 0, 0);
     }
     return true;
 }
