@@ -16,6 +16,8 @@
 
 #include QMK_KEYBOARD_H
 
+#define CAPS_LOCK_LED   30
+
 enum layer_names {
     WINBASE,
     WINFN,
@@ -174,7 +176,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
         // Set capslock key to orange (capslock is led number 30)
-        rgb_matrix_set_color(30, 255, 130, 15);
+        rgb_matrix_set_color(CAPS_LOCK_LED, 255, 130, 15);
     }
     return false;
 }

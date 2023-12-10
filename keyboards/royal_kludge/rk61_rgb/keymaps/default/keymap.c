@@ -18,7 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include QMK_KEYBOARD_H
 
-#define CAPS_LOCK_KEY   28
+#define CAPS_LOCK_LED   28
 
 // Each layer gets a name for readability, which is then used in the keymap matrix below.
 // The underscores don't mean anything - you can have a layer called STUFF or any other name.
@@ -181,7 +181,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
         // Set capslock key to orange (capslock is led number 30)
-        rgb_matrix_set_color(CAPS_LOCK_KEY, 255, 130, 15);
+        rgb_matrix_set_color(CAPS_LOCK_LED, 255, 130, 15);
     }
     return false;
 }
