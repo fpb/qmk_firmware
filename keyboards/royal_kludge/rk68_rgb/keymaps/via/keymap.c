@@ -1,6 +1,7 @@
 /*
 Copyright 2020 Dimitris Mantzouranis
 Copyright 2022 Philip Mourdjis
+Copyright 2023 Fernando Birra
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -15,6 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
 #include QMK_KEYBOARD_H
 
 #define CAPS_LOCK_LED   30
@@ -23,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // The underscores don't mean anything - you can have a layer called STUFF or any other name.
 // Layer names don't all need to be of the same length, obviously, and you can also skip them
 // entirely and just use numbers.
+
 enum layer_names {
     WINBASE,
     WINFN,
@@ -32,8 +35,8 @@ enum layer_names {
 };
 
 enum custom_keycodes {
-    KC_WIN_KEY = SAFE_RANGE,
-    KC_MAC_KEY
+    RK_WIN_KEY = SAFE_RANGE,
+    RK_MAC_KEY
 };
 
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
