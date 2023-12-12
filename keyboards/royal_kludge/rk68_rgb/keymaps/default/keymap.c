@@ -16,6 +16,22 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+/* Copyright (C) 2023 Fernando Birra
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include QMK_KEYBOARD_H
 
 #define CAPS_LOCK_LED   30
@@ -44,8 +60,30 @@ enum custom_keycodes {
 #define KC_MAC KC_MAC_KEY
 #define KC_WIN KC_WIN_KEY
 
+#define CAPS_LOCK_LED   30
+
+enum layer_names {
+    WINBASE,
+    WINFN,
+    MACBASE,
+    MACFN,
+    FNS
+};
+
+enum custom_keycodes {
+    RK_WIN_KEY = SAFE_RANGE,
+    RK_MAC_KEY
+};
+
+#define KC_TASK LGUI(KC_TAB)        // Task viewer
+#define KC_FLXP LGUI(KC_E)          // Windows file explorer
+#define KC_MCTL KC_MISSION_CONTROL  // Mission Control
+#define KC_LPAD KC_LAUNCHPAD        // Launchpad
+#define RK_MAC  RK_MAC_KEY          // Switch to MAC default layer
+#define RK_WIN  RK_WIN_KEY          // Switch to WIN default layer
+
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
-        /* Windows Base
+    /* Windows Base
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
      * │Esc│ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │ 9 │ 0 │ - │ = │ Backsp│`~ │
      * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
@@ -65,7 +103,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_LSFT,                KC_Z,       KC_X,       KC_C,       KC_V,       KC_B,       KC_N,       KC_M,       KC_COMM,    KC_DOT,     KC_SLSH,     KC_RSFT,    KC_UP,      KC_PGDN,
         KC_LCTL,    KC_LGUI,    KC_LALT,                                        KC_SPC,                             KC_RALT,    MO(WINFN),  KC_RCTL,     KC_LEFT,    KC_DOWN,    KC_RGHT
     ),
-        /* Windows FN
+    /* Windows FN
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
      * │   │BRU│BRD│TSK│FLX│VAD│VAI│PRV│PLY│NXT│MTE│VLD│VLU│       │PrS│
      * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
@@ -81,9 +119,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [WINFN] = LAYOUT_65_ansi(
         _______,    KC_BRIU,    KC_BRID,    KC_TASK,    KC_FLXP,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,     KC_PSCR,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    KC_HOME,    KC_END,     RGB_MOD,     KC_INS,
-        _______,    _______,    KC_MAC,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,     KC_PAUS,
+        _______,    _______,    RK_MAC,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,     KC_PAUS,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_HUI,    _______,    _______,    MO(FNS),    RGB_VAI,     KC_SCRL,
-        _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,     RGB_SPI
+        QK_BOOT,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,     RGB_SPI
     ),
     /* Mac Base
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
@@ -115,17 +153,17 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
      * │        │   │   │   │   │   │   │   │   │   │   │      │VAI│Scr│
      * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │    │    │    │                        │   │   │   │SPD│VAD│SPI│
+     * │BOOT│    │    │                        │   │   │   │SPD│VAD│SPI│
      * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
      */
     [MACFN] = LAYOUT_65_ansi(
         _______,    KC_BRIU,    KC_BRID,    KC_MCTL,    KC_LPAD,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,    KC_PSCR,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    KC_HOME,    KC_END,     RGB_MOD,    KC_INS,
-        _______,    KC_WIN,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    KC_BRK,
+        _______,    RK_WIN,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    KC_BRK,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_HUI,    _______,    _______,    MO(FNS),    RGB_VAI,    KC_SCRL,
         QK_BOOT,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,    RGB_SPI
     ),
-    /* Mac FN + Right Shift
+    /* Fn + Right Shift
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
      * │   │F1 │F2 │F3 │F4 │F5 │F6 │F7 │F8 │F9 │F10│F11│F12│       │   │
      * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
@@ -149,12 +187,12 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
-        case KC_WIN:
+        case RK_WIN:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(WINBASE);
             }
             return false;
-        case KC_MAC:
+        case RK_MAC:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(MACBASE);
             }
@@ -178,10 +216,11 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     }
 }
 
+
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
         // Set capslock key to orange (capslock is led number 30)
-            rgb_matrix_set_color(CAPS_LOCK_LED, 255, 0, 0);
+        rgb_matrix_set_color(CAPS_LOCK_LED, 255, 130, 15);
     }
     return true;
 }
