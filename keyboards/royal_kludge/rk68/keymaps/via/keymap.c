@@ -38,16 +38,16 @@ enum layer_names {
 enum custom_keycodes {
     KC_MISSION_CONTROL = RK68_SAFE_RANGE,
     KC_LAUNCHPAD,
-    KC_WIN_KEY,
-    KC_MAC_KEY
+    RK_WIN_KEY,
+    RK_MAC_KEY
 };
 
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
 #define KC_FLXP LGUI(KC_E)          // Windows file explorer
 #define KC_MCTL KC_MISSION_CONTROL  // Mission Control
 #define KC_LPAD KC_LAUNCHPAD        // Launchpad
-#define KC_MAC KC_MAC_KEY
-#define KC_WIN KC_WIN_KEY
+#define RK_MAC RK_MAC_KEY
+#define RK_WIN RK_WIN_KEY
 
 #define BT_TOGG BT_TOGGLE
 #define BT_PRO1 BT_PROFILE1
@@ -93,9 +93,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [WINFN] = LAYOUT_65_ansi(
         _______,    KC_BRIU,    KC_BRID,    KC_TASK,    KC_FLXP,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,     KC_PSCR,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    BT_PRO4,    BT_PRO5,    _______,    _______,    _______,    _______,    BT_PAIR,    KC_HOME,    KC_END,     RGB_MOD,     KC_INS,
-        _______,    _______,    KC_MAC,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,     KC_PAUS,
+        _______,    _______,    RK_MAC,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,     KC_PAUS,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_HUI,    _______,    _______,    MO(FNS),    RGB_VAI,     KC_SCRL,
-        _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,     RGB_SPI
+        QK_BOOT,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,     RGB_SPI
     ),
     /* Mac Base
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
@@ -133,7 +133,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [MACFN] = LAYOUT_65_ansi(
         _______,    KC_BRIU,    KC_BRID,    KC_MCTL,    KC_LPAD,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,    KC_PSCR,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    BT_PRO4,    BT_PRO5,    _______,    _______,    _______,    _______,    BT_PAIR,    KC_HOME,    KC_END,     RGB_MOD,    KC_INS,
-        _______,    KC_WIN,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    KC_BRK,
+        _______,    RK_WIN,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    KC_BRK,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_HUI,    _______,    _______,    MO(FNS),    RGB_VAI,    KC_SCRL,
         QK_BOOT,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,    RGB_SPI
     ),
@@ -189,12 +189,12 @@ bool dip_switch_update_user(uint8_t index, bool active) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
-        case KC_WIN:
+        case RK_WIN:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(WINBASE);
             }
             return false;
-        case KC_MAC:
+        case RK_MAC:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(MACBASE);
             }

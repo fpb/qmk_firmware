@@ -18,16 +18,17 @@
 
 #include "quantum.h"
 
-#ifndef USER00
-#define USER00 SAFE_RANGE
-#endif
+
+
 
 enum rk61_keycodes {
+#ifdef VIA_ENABLE
     BT_PROFILE1 = USER00,
+#else
+    BT_PROFILE1 = SAFE_RANGE,
+#endif
     BT_PROFILE2,
     BT_PROFILE3,
-    // BT_PROFILE4,
-    // BT_PROFILE5,
     BT_PAIR,
     BT_TOGGLE,
     BT_RESET,

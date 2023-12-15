@@ -40,37 +40,37 @@ enum layer_names {
 enum custom_keycodes {
     KC_MISSION_CONTROL = RK61_SAFE_RANGE,
     KC_LAUNCHPAD,
-    KC_WIN_KEY,
-    KC_MAC_KEY
+    RK_WIN_KEY,
+    RK_MAC_KEY
 };
 
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
 #define KC_FLXP LGUI(KC_E)          // Windows file explorer
 #define KC_MCTL KC_MISSION_CONTROL  // Mission Control
 #define KC_LPAD KC_LAUNCHPAD        // Launchpad
-#define KC_MAC KC_MAC_KEY
-#define KC_WIN KC_WIN_KEY
+#define RK_MAC RK_MAC_KEY
+#define RK_WIN RK_WIN_KEY
 
+#ifdef BLUETOOTH_ENABLE
 #define BT_TOGG BT_TOGGLE
 #define BT_PRO1 BT_PROFILE1
 #define BT_PRO2 BT_PROFILE2
 #define BT_PRO3 BT_PROFILE3
-#define BT_PRO4 BT_PROFILE4
-#define BT_PRO5 BT_PROFILE5
+#endif
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
-    /* Mac Base
+    /* Win Base
      * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┐
      * │Esc│ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │ 9 │ 0 │ - │ = │ Backsp│
      * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┤
      * │ Tab │ Q │ W │ E │ R │ T │ Y │ U │ I │ O │ P │ [ │ ] │  \  │
      * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┤
      * │ Caps │ A │ S │ D │ F │ G │ H │ J │ K │ L │ ; │ ' │  Enter │
-     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┤
-     * │ Shift  │ Z │ X │ C │ V │ B │ N │ M │ , │ . │ / │ Shift│ ↑ │
-     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │Ctrl│Alt │GUI │         Space          │GUI│Fn │Ctr│ ← │ ↓ │ → │
-     * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
+     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────────┤
+     * │ Shift  │ Z │ X │ C │ V │ B │ N │ M │ , │ . │ / │   Shift  │
+     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴───┴───┴┬────┬────┤
+     * │Ctrl│GUI │Alt │         Space          │Alt │APP │Ctr │ Fn │
+     * └────┴────┴────┴────────────────────────┴────┴────┴────┴────┘
      */
     [WINBASE] = LAYOUT_60_ansi(
         QK_GESC,    KC_1,       KC_2,       KC_3,       KC_4,       KC_5,       KC_6,       KC_7,       KC_8,       KC_9,       KC_0,       KC_MINS,    KC_EQL,     KC_BSPC,    
@@ -79,23 +79,23 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_LSFT,                KC_Z,       KC_X,       KC_C,       KC_V,       KC_B,       KC_N,       KC_M,       KC_COMM,    KC_DOT,     KC_SLSH,    KC_RSFT,                
         KC_LCTL,    KC_LGUI,    KC_LALT,                                        KC_SPC,                                         KC_RALT,    KC_APP,     KC_RCTL,    MO(WINFN)
     ),
-    /* Mac FN
-     * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
-     * │`~ │BRU│BRD│TSK│FLX│VAD│VAI│PRV│PLY│NXT│MTE│VLD│VLU│       │TOG│
-     * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
-     * │     │   │   │   │   │   │   │   │   │   │INS│DEL│END│     │   │
-     * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┼───┤
-     * │      │   │   │   │   │   │   │   │   │   │   │   │        │   │
-     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
-     * │        │   │   │   │   │   │   │   │   │   │   │      │   │   │
-     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │    │    │    │                        │   │   │   │   │   │   │
-     * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
+    /* Win FN
+     * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┐
+     * │`~ │BRU│BRD│TSK│FLX│VAD│VAI│PRV│PLY│NXT│MTE│VLD│VLU│ Backsp│
+     * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┤
+     * │     │BT1│BT2│BT3│   │   │Prt│Scr│Pau│   │PAI│VAD│VAI│ MOD │
+     * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┤
+     * │      │   │MAC│   │   │   │Ins│Hom│PgU│   │SPD│SPI│        │
+     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────────┤
+     * │        │   │   │   │   │   │Del│End│PgD│HUI│ ↑ │   Shift  │
+     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴───┴───┴┬────┬────┤
+     * │BOOT│    │    │                        │  ← │  ↓ │  → │ Fn │
+     * └────┴────┴────┴────────────────────────┴────┴────┴────┴────┘
      */
     [WINFN] = LAYOUT_60_ansi(
         KC_GRV,     KC_BRIU,    KC_BRID,    KC_TASK,    KC_FLXP,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    _______,    _______,    KC_PSCR,    KC_SCRL,    KC_PAUS,    _______,    BT_PAIR,    RGB_VAD,    RGB_VAI,    RGB_MOD,   
-        _______,    _______,    KC_MAC,     _______,    _______,    _______,    KC_INS,     KC_HOME,    KC_PGUP,    _______,    RGB_SPD,    RGB_SPI,                _______,   
+        _______,    _______,    RK_MAC,     _______,    _______,    _______,    KC_INS,     KC_HOME,    KC_PGUP,    _______,    RGB_SPD,    RGB_SPI,                _______,   
         _______,                _______,    _______,    _______,    _______,    _______,    KC_DEL,     KC_END,     KC_PGDN,    RGB_HUI,    KC_UP,      MO(FNS),   
         QK_BOOT,    _______,    _______,                                        _______,                                        KC_LEFT,    KC_DOWN,    KC_RIGHT,   _______
     ),
@@ -106,11 +106,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * │ Tab │ Q │ W │ E │ R │ T │ Y │ U │ I │ O │ P │ [ │ ] │  \  │
      * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┤
      * │ Caps │ A │ S │ D │ F │ G │ H │ J │ K │ L │ ; │ ' │  Enter │
-     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┤
-     * │ Shift  │ Z │ X │ C │ V │ B │ N │ M │ , │ . │ / │ Shift│ ↑ │
-     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │Ctrl│Alt │GUI │         Space          │GUI│Fn │Ctr│ ← │ ↓ │ → │
-     * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
+     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────────┤
+     * │ Shift  │ Z │ X │ C │ V │ B │ N │ M │ , │ . │ / │   Shift  │
+     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴───┴───┴┬────┬────┤
+     * │Ctrl│Alt │GUI │         Space          │GUI │Alt │Ctr │ Fn │
+     * └────┴────┴────┴────────────────────────┴────┴────┴────┴────┘
      */
     [MACBASE] = LAYOUT_60_ansi(
         QK_GESC,    KC_1,       KC_2,       KC_3,       KC_4,       KC_5,       KC_6,       KC_7,       KC_8,       KC_9,       KC_0,       KC_MINS,    KC_EQL,     KC_BSPC,    
@@ -120,44 +120,44 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_LCTL,    KC_LALT,    KC_LCMD,                                        KC_SPC,                                         KC_RCMD,    KC_RALT,    KC_RCTL,    MO(MACFN)
     ),
     /* Mac FN
-     * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
-     * │`~ │BRU│BRD│TSK│FLX│VAD│VAI│PRV│PLY│NXT│MTE│VLD│VLU│       │TOG│
-     * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
-     * │     │   │   │   │   │   │   │   │   │   │INS│DEL│END│     │   │
-     * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┼───┤
-     * │      │   │   │   │   │   │   │   │   │   │   │   │        │   │
-     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
-     * │        │   │   │   │   │   │   │   │   │   │   │      │   │   │
-     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │    │    │    │                        │   │   │   │   │   │   │
-     * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
+     * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┐
+     * │`~ │BRU│BRD│MCT│LPD│VAD│VAI│PRV│PLY│NXT│MTE│VLD│VLU│ Backsp│
+     * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┤
+     * │     │BT1│BT2│BT3│   │   │Prt│Scr│Pau│   │PAI│VAD│VAI│ MOD │
+     * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┤
+     * │      │WIN│   │   │   │   │Ins│Hom│PgU│   │SPD│SPI│        │
+     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────────┤
+     * │        │   │   │   │   │   │Del│End│PgD│HUI│ ↑ │   Shift  │
+     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴───┴───┴┬────┬────┤
+     * │BOOT│    │    │                        │  ← │  ↓ │  → │ Fn │
+     * └────┴────┴────┴────────────────────────┴────┴────┴────┴────┘
      */
     [MACFN] = LAYOUT_60_ansi(
         KC_GRV,     KC_BRIU,    KC_BRID,    KC_MCTL,    KC_LPAD,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    _______,    _______,    KC_PSCR,    KC_SCRL,    KC_PAUS,    _______,    BT_PAIR,    RGB_VAD,    RGB_VAI,    RGB_MOD,   
-        _______,    KC_WIN,     _______,    _______,    _______,    _______,    KC_INS,     KC_HOME,    KC_PGUP,    _______,    RGB_SPD,    RGB_SPI,                _______,   
+        _______,    RK_WIN,     _______,    _______,    _______,    _______,    KC_INS,     KC_HOME,    KC_PGUP,    _______,    RGB_SPD,    RGB_SPI,                _______,   
         _______,                KC_MUTE,    KC_VOLD,    KC_VOLU,    KC_MPRV,    KC_MNXT,    KC_DEL,     KC_END,     KC_PGDN,    RGB_HUI,    KC_UP,      MO(FNS),   
         QK_BOOT,    _______,    _______,                                        _______,                                        KC_LEFT,    KC_DOWN,    KC_RIGHT,   _______
     ),
-    /* Mac FN + Right Shift
-     * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┬───┐
-     * │   │F1 │F2 │F3 │F4 │F5 │F6 │F7 │F8 │F9 │F10│F11│F12│       │   │
-     * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┤
-     * │     │   │   │   │   │   │   │   │   │   │   │   │   │     │   │
-     * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┼───┤
-     * │      │   │   │   │   │   │   │   │   │   │   │   │        │   │
-     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
-     * │        │   │   │   │   │   │   │   │   │   │   │        ↑ │   │
-     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
-     * │    │    │    │                        │   │   │   │ ← │ ↓ │ → │
-     * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
+    /* FN + Right Shift
+     * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───────┐
+     * │   │F1 │F2 │F3 │F4 │F5 │F6 │F7 │F8 │F9 │F10│F11│F12│       │
+     * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┤
+     * │     │   │   │   │   │   │   │   │   │   │   │   │   │     │
+     * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┤
+     * │      │   │   │   │   │   │   │   │   │   │   │   │        │
+     * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────────┤
+     * │        │   │   │   │   │   │   │   │   │   │SAI│          │
+     * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴───┴───┴┬────┬────┤
+     * │    │    │    │                        │    │SAD │    │    │
+     * └────┴────┴────┴────────────────────────┴────┴────┴────┴────┘
      */
     [FNS] = LAYOUT_60_ansi(
         KC_TILD,    KC_F1,      KC_F2,      KC_F3,      KC_F4,      KC_F5,      KC_F6,      KC_F7,      KC_F8,      KC_F9,      KC_F10,     KC_F11,     KC_F12,     _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,
-        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,
-        _______,    _______,    _______,                                        _______,                                        _______,    _______,    _______,    _______
+        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_SAI,    _______,
+        _______,    _______,    _______,                                        _______,                                        _______,    RGB_SAD,    _______,    _______
     )
 };
 
@@ -167,7 +167,6 @@ void iton_bt_connection_successful() {
 
 void iton_bt_entered_pairing() {
 }
-
 static bool theswitch = FALSE;
 
 
@@ -190,12 +189,12 @@ bool dip_switch_update_user(uint8_t index, bool active) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
-        case KC_WIN:
+        case RK_WIN:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(WINBASE);
             }
             return false;
-        case KC_MAC:
+        case RK_MAC:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(MACBASE);
             }
@@ -224,9 +223,9 @@ bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
         // Set capslock key to orange (capslock is led number 30)
         if(where_to_send() == OUTPUT_BLUETOOTH)
         //if( theswitch)
-            rgb_matrix_set_color(28, 3, 131, 251);
+            rgb_matrix_set_color(CAPS_LOCK_LED, 3, 131, 251);
         else
-            rgb_matrix_set_color(28, 255, 0, 0);
+            rgb_matrix_set_color(CAPS_LOCK_LED, 255, 0, 0);
     }
     return true;
 }
