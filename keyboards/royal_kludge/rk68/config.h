@@ -17,5 +17,4 @@
 #pragma once
 
 #define VIA_QMK_RGBLIGHT_ENABLE
-#define ITON_BT_ENABLE_ACK
 #include "config_common.h"

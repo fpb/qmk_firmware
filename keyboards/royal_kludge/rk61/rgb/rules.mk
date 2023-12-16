@@ -20,5 +20,7 @@ KEYBOARD_SHARED_EP 		= yes
 BLUETOOTH_ENABLE 		= yes
 BLUETOOTH_DRIVER		= ItonBT
 
+RGB_MATRIX_CUSTOM_USER = yes
+
 DEFAULT_FOLDER = royal_kludge/rk61/rgb/ansi
 

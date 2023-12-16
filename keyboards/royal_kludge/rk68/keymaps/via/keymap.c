@@ -152,21 +152,15 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      */
     [FNS] = LAYOUT_65_ansi(
         _______,    KC_F1,      KC_F2,      KC_F3,      KC_F4,      KC_F5,      KC_F6,      KC_F7,      KC_F8,      KC_F9,      KC_F10,     KC_F11,     KC_F12,     _______,    _______,
-        _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,
+        _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    BT_RESET,    _______,    _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    _______,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_SAI,    _______,
         _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,    _______,    RGB_SAD,    _______
     )
 };
 
-void iton_bt_connection_successful() {
-    //set_output(OUTPUT_BLUETOOTH);
-}
 
-void iton_bt_entered_pairing() {
-}
-
-static bool theswitch = FALSE;
+static bool bt_mode = FALSE;
 
 
 bool dip_switch_update_user(uint8_t index, bool active) {
@@ -175,10 +169,10 @@ bool dip_switch_update_user(uint8_t index, bool active) {
             #ifdef BLUETOOTH_ENABLE
             if (active) {
                 set_output(OUTPUT_BLUETOOTH);
-                theswitch = TRUE;
+                bt_mode = TRUE;
             } else {
                 set_output(OUTPUT_USB);
-                theswitch = FALSE;
+                bt_mode = FALSE;
             }
             #endif
         break;
@@ -222,9 +216,9 @@ bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
         // Set capslock key to orange (capslock is led number 30)
         if(where_to_send() == OUTPUT_BLUETOOTH)
-            rgb_matrix_set_color(CAPS_LOCK_LED, 3, 131, 251);
+            rgb_matrix_set_color(CAPS_LOCK_LED, RGB_BLUE);
         else
-            rgb_matrix_set_color(CAPS_LOCK_LED, 255, 0, 0);
+            rgb_matrix_set_color(CAPS_LOCK_LED, RGB_ORANGE);
     }
     return true;
 }

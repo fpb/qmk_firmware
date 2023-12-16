@@ -21,5 +21,6 @@ KEYBOARD_SHARED_EP 		= yes
 BLUETOOTH_ENABLE 		= yes
 BLUETOOTH_DRIVER		= ItonBT
 
-DEFAULT_FOLDER = royal_kludge/rk68/rgb/ansi
+RGB_MATRIX_CUSTOM_USER = yes
 
+DEFAULT_FOLDER = royal_kludge/rk68/rgb/ansi
