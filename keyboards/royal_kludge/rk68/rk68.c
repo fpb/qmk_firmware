@@ -37,6 +37,10 @@ void iton_bt_disconnected(void) {
     rgb_matrix_reload_from_eeprom();
 }
 
+void keyboard_post_init_kb(void) {
+    curr_bt_profile = -1;
+}
+
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (record->event.pressed) {
         switch(keycode) {
@@ -62,7 +66,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
                 iton_bt_switch_profile(4);
                 break;
             case BT_PAIR:
-                if(curr_bt_profile != -1)
+                if(curr_bt_profile >= 0 && curr_bt_profile <= 4)
                     iton_bt_enter_pairing();
                 break;
             case BT_TOGGLE:
