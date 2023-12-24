@@ -49,12 +49,14 @@ enum custom_keycodes {
 #define RK_MAC RK_MAC_KEY
 #define RK_WIN RK_WIN_KEY
 
+#ifdef BLUETOOTH_ENABLE
 #define BT_TOGG BT_TOGGLE
 #define BT_PRO1 BT_PROFILE1
 #define BT_PRO2 BT_PROFILE2
 #define BT_PRO3 BT_PROFILE3
 #define BT_PRO4 BT_PROFILE4
 #define BT_PRO5 BT_PROFILE5
+#endif
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         /* Windows Base

@@ -9,7 +9,6 @@ TOP_SYMBOLS = yes
 #
 MAGIC_ENABLE 			= yes
 MAGIC_KEYCODE_ENABLE 	= yes
-
 VIA_ENABLE 				= no
 
 EEPROM_DRIVER = wear_leveling

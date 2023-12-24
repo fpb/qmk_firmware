@@ -35,8 +35,8 @@ enum rk61_keycodes {
     RK61_SAFE_RANGE
 };
 
-#if defined(KEYBOARD_royal_kludge_rk68_rgb)
+#if defined(KEYBOARD_royal_kludge_rk61_rgb)
     #include "rgb.h"
-#elif defined(KEYBOARD_royal_kludge_rk68_white)
+#elif defined(KEYBOARD_royal_kludge_rk61_white)
     #include "white.h"
 #endif
