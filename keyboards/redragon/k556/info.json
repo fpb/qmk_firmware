@@ -307,7 +307,9 @@
 
                 {"matrix": [5, 18], "x": 19.5, "y": 5.25, "w": 2},
                 {"matrix": [5, 19], "x": 21.5, "y": 5.25}
-            ]
+            ],
+            "react_on_keyup": true,
+            "sleep": true
         }
     }
 }
