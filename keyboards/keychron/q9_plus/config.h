@@ -23,8 +23,7 @@
 #define DIP_SWITCH_MATRIX_GRID {{ 3, 4 }}
 
 /* RGB Matrix Driver Configuration */
-#define DRIVER_COUNT 1
-#define DRIVER_ADDR_1 0b1110100
+#define SNLED27351_I2C_ADDRESS_1 SNLED27351_I2C_ADDRESS_GND
 
 /* Increase I2C speed to 1000 KHz */
 #define I2C1_TIMINGR_PRESC 0U
@@ -34,11 +33,11 @@
 #define I2C1_TIMINGR_SCLL 51U
 
 /* Set LED driver current */
-#define CKLED2001_CURRENT_TUNE \
+#define SNLED27351_CURRENT_TUNE \
     { 0xF8, 0xF8, 0x70, 0xF8, 0xF8, 0x70, 0xF8, 0xF8, 0x70, 0xF8, 0xF8, 0x70 }
 
 /* turn off effects when suspended */
-#define RGB_DISABLE_WHEN_USB_SUSPENDED
+#define RGB_MATRIX_SLEEP
 
 /* EEPROM Driver Configuration */
 #define WEAR_LEVELING_LOGICAL_SIZE 2048
@@ -52,7 +51,3 @@
 
 /* Old default behavior of mod-taps */
 #define HOLD_ON_OTHER_KEY_PRESS
-
-/* Factory test keys */
-#define F_RESET_KEY1 KC_7
-#define FN_KEY1 MO(4)
