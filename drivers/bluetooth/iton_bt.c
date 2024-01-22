@@ -246,5 +246,6 @@ void iton_bt_send_keyboard(report_keyboard_t *report) {
         return iton_bt_send(report_nkro, &nkro_report[0], 15);
     }
 
-    iton_bt_send(report_hid, &report->raw[HID_REPORT_OFFSET], 8);
+//    iton_bt_send(report_hid, &report->raw[HID_REPORT_OFFSET], 8);
+    iton_bt_send(report_hid, &(report->mods), 8);
 }

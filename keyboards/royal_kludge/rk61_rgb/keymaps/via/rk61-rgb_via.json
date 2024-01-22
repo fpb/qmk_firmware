@@ -3,6 +3,16 @@
     "vendorId": "0x0C45",
     "productId": "0x8016",
     "menus": ["qmk_rgb_matrix"],
+    "customKeycodes": [
+        {"name": "Bluetooth Host 1", "title": "Bluetooth Host 1", "shortName": "BT1"},
+        {"name": "Bluetooth Host 2", "title": "Bluetooth Host 2", "shortName": "BT2"},
+        {"name": "Bluetooth Host 3", "title": "Bluetooth Host 3", "shortName": "BT3"},
+        {"name": "Bluetooth Pairing", "title": "Bluetooth Pairing", "shortName": "BT_PAIR"},
+        {"name": "Bluetooth Toggle", "title": "Bluetooth Toggle", "shortName": "BT_TOG"},
+        {"name": "Bluetooth Reset", "title": "Bluetooth Reset", "shortName": "BT_RST"},
+        {"name": "Windows Mode", "title": "Windows Mode", "shortName": "WIN"},
+        {"name": "Mac Mode", "title": "Mac Mode", "shortName": "MAC"}
+        ],
     "matrix": {"rows": 5, "cols": 14},
     "layouts": {
         "keymap": [
