@@ -104,7 +104,7 @@ void host_keyboard_send(report_keyboard_t *report) {
 
 void host_nkro_send(report_nkro_t *report) {
 #ifdef BLUETOOTH_ENABLE
-    if(where_to_send() == OUTPUT_BLUETOOTH) {
+    if (where_to_send() == OUTPUT_BLUETOOTH) {
         bluetooth_nkro_send(report);
         return;
     }

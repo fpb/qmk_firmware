@@ -44,7 +44,6 @@ void bluetooth_send_keyboard(report_keyboard_t *report);
  */
 void bluetooth_nkro_send(report_nkro_t *report);
 
-
 /**
  * \brief Send a mouse report.
  *
