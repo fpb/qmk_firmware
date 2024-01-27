@@ -56,6 +56,13 @@ enum custom_keycodes {
 #define BT_PRO2 BT_PROFILE2
 #define BT_PRO3 BT_PROFILE3
 #define BT_RST  BT_RESET
+#else
+#define BT_TOGG KC_TRNS
+#define BT_PAIR KC_TRNS
+#define BT_PRO1 KC_TRNS
+#define BT_PRO2 KC_TRNS
+#define BT_PRO3 KC_TRNS
+#define BT_RST  KC_TRNS
 #endif
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
@@ -156,11 +163,12 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TILD,    KC_F1,      KC_F2,      KC_F3,      KC_F4,      KC_F5,      KC_F6,      KC_F7,      KC_F8,      KC_F9,      KC_F10,     KC_F11,     KC_F12,     _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    BT_RST,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,
-        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_SAI,    _______,
+        _______,                _______,    _______,    _______,    _______,    _______,    NK_TOGG,    _______,    _______,    _______,    RGB_SAI,    _______,
         _______,    _______,    _______,                                        _______,                                        _______,    RGB_SAD,    _______,    _______
     )
 };
 
+#ifdef BLUETOOTH_ENABLE
 static bool bt_mode = FALSE;
 
 bool dip_switch_update_user(uint8_t index, bool active) {
@@ -179,6 +187,7 @@ bool dip_switch_update_user(uint8_t index, bool active) {
     }
     return true;
 }
+#endif
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
@@ -214,10 +223,15 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
         // Set capslock key to orange (capslock is led number 30)
+
+#ifdef BLUETOOTH_ENABLE
         if(where_to_send() == OUTPUT_BLUETOOTH)
             rgb_matrix_set_color(CAPS_LOCK_LED, RGB_BLUE);
         else
             rgb_matrix_set_color(CAPS_LOCK_LED, RGB_ORANGE);
+#else
+        rgb_matrix_set_color(CAPS_LOCK_LED, RGB_ORANGE);
+#endif
     }
     return true;
 }
