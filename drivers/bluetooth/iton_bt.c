@@ -249,3 +249,13 @@ void iton_bt_send_keyboard(report_keyboard_t *report) {
 //    iton_bt_send(report_hid, &report->raw[HID_REPORT_OFFSET], 8);
     iton_bt_send(report_hid, &report->mods, 8);
 }
+
+void iton_bt_send_nkro(report_nkro_t *report) {
+    report_keyboard_t rep;
+
+    rep.report_id = report_hid;
+    rep.mods = report->mods;
+    rep.keys[0] = rep.keys[1] = rep.keys[2] = rep.keys[3] = rep.keys[4] = rep.keys[5] = 0;
+    iton_bt_send_keyboard(&rep);
+    iton_bt_send(report_nkro, &report->bits[0], 15);
+}

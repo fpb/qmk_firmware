@@ -24,11 +24,15 @@
 #define RK_BT_PROFILE_3     2
 
 enum rk61_keycodes {
-    BT_PROFILE1 = QK_KB_0,
+    KC_WIN_KEY = QK_KB_0,
+    KC_MAC_KEY,
+#ifdef BLUETOOTH_ENABLE
+    BT_PROFILE1,
     BT_PROFILE2,
     BT_PROFILE3,
     BT_PAIR,
     BT_TOGGLE,
     BT_RESET,
+#endif
     RK61_SAFE_RANGE
 };

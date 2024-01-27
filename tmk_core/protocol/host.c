@@ -103,6 +103,13 @@ void host_keyboard_send(report_keyboard_t *report) {
 }
 
 void host_nkro_send(report_nkro_t *report) {
+#ifdef BLUETOOTH_ENABLE
+    if(where_to_send() == OUTPUT_BLUETOOTH) {
+        bluetooth_nkro_send(report);
+        return;
+    }
+#endif
+
     if (!driver) return;
     report->report_id = REPORT_ID_NKRO;
     (*driver->send_nkro)(report);

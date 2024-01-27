@@ -15,8 +15,11 @@ RGB_MATRIX_EFFECT(bt_pairing_effect)
 // dedicated init and run methods
 
 static uint16_t intensity_value;
+#ifdef BLUETOOTH_ENABLE
 extern uint8_t curr_bt_profile;
-
+#else
+uint8_t curr_bt_profile = 0;
+#endif
 static void bt_pairing_effect_init(effect_params_t* params) {
   intensity_value = 0;
 }

@@ -125,7 +125,7 @@ void iton_bt_send_fn(bool pressed);
 void iton_bt_send_system(uint16_t data);
 void iton_bt_send_consumer(uint16_t data);
 void iton_bt_send_keyboard(report_keyboard_t *report);
-
+void iton_bt_send_nkro(report_nkro_t *report);
 /**
  * Driver Macros
  */

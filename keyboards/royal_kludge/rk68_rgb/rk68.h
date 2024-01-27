@@ -26,7 +26,10 @@
 #define RK_BT_PROFILE_5     4
 
 enum rk68_keycodes {
-    BT_PROFILE1 = QK_KB_0,
+    KC_WIN_KEY = QK_KB_0,
+    KC_MAC_KEY,
+#ifdef BLUETOOTH_ENABLE
+    BT_PROFILE1,
     BT_PROFILE2,
     BT_PROFILE3,
     BT_PROFILE4,
@@ -34,5 +37,6 @@ enum rk68_keycodes {
     BT_PAIR,
     BT_TOGGLE,
     BT_RESET,
+#endif
     RK68_SAFE_RANGE
 };
