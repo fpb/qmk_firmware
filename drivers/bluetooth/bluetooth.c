@@ -53,9 +53,9 @@ void bluetooth_send_keyboard(report_keyboard_t *report) {
 
 void bluetooth_nkro_send(report_nkro_t *report) {
 #if defined(BLUETOOTH_BLUEFRUIT_LE)
-    //bluefruit_le_send_keyboard(report);
+    return;
 #elif defined(BLUETOOTH_RN42)
-    //rn42_send_keyboard(report);
+    return;
 #elif defined(BLUETOOTH_ITON_BT)
     iton_bt_send_nkro(report);
 #endif
