@@ -46,12 +46,12 @@ else
 endif
 
 ifeq ($(strip $(NKRO_ENABLE)), yes)
-    ifeq ($(strip $(BLUETOOTH_ENABLE)), yes)
-        $(info NKRO is not currently supported with Bluetooth, and has been disabled.)
-    else
+#    ifeq ($(strip $(BLUETOOTH_ENABLE)), yes)
+#        $(info NKRO is not currently supported with Bluetooth, and has been disabled.)
+#    else
         OPT_DEFS += -DNKRO_ENABLE
         SHARED_EP_ENABLE = yes
-    endif
+#    endif
 endif
 
 ifeq ($(strip $(RING_BUFFERED_6KRO_REPORT_ENABLE)), yes)

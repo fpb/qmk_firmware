@@ -38,6 +38,13 @@ void bluetooth_task(void);
 void bluetooth_send_keyboard(report_keyboard_t *report);
 
 /**
+ * \brief Send a nkro report.
+ *
+ * \param report The nkro report to send.
+ */
+void bluetooth_nkro_send(report_nkro_t *report);
+
+/**
  * \brief Send a mouse report.
  *
  * \param report The mouse report to send.

@@ -21,6 +21,7 @@
 #include "iton_bt.h"
 #endif
 
+#ifdef BLUETOOTH_ENABLE
 uint8_t curr_bt_profile = RK_BT_PROFILE_NONE;
 
 void iton_bt_connection_successful(void) {
@@ -40,6 +41,7 @@ void iton_bt_disconnected(void) {
 void keyboard_post_init_kb(void) {
     curr_bt_profile = RK_BT_PROFILE_NONE;
 }
+#endif
 
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (record->event.pressed) {

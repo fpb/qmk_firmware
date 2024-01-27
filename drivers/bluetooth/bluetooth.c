@@ -51,6 +51,16 @@ void bluetooth_send_keyboard(report_keyboard_t *report) {
 #endif
 }
 
+void bluetooth_nkro_send(report_nkro_t *report) {
+#if defined(BLUETOOTH_BLUEFRUIT_LE)
+    return;
+#elif defined(BLUETOOTH_RN42)
+    return;
+#elif defined(BLUETOOTH_ITON_BT)
+    iton_bt_send_nkro(report);
+#endif
+}
+
 void bluetooth_send_mouse(report_mouse_t *report) {
 #if defined(BLUETOOTH_BLUEFRUIT_LE)
     bluefruit_le_send_mouse(report);
