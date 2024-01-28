@@ -1,6 +1,7 @@
 /*
 Copyright 2020 Dimitris Mantzouranis
 Copyright 2022 Philip Mourdjis
+Copyright 2023 Fernando Birra
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,29 +38,33 @@ enum layer_names {
     FNS,
 };
 
-enum custom_keycodes {
-//    KC_MISSION_CONTROL = RK68_SAFE_RANGE,
-//    KC_LAUNCHPAD,
-    RK_WIN_KEY = RK68_SAFE_RANGE,
-    RK_MAC_KEY
-};
-
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
 #define KC_FLXP LGUI(KC_E)          // Windows file explorer
 #define KC_MCTL KC_MISSION_CONTROL  // Mission Control
 #define KC_LPAD KC_LAUNCHPAD        // Launchpad
-#define RK_MAC RK_MAC_KEY
-#define RK_WIN RK_WIN_KEY
+#define KC_MAC KC_MAC_KEY
+#define KC_WIN KC_WIN_KEY
 
 #ifdef BLUETOOTH_ENABLE
 #define BT_TOGG BT_TOGGLE
+#define BT_PAI  BT_PAIR
 #define BT_PRO1 BT_PROFILE1
 #define BT_PRO2 BT_PROFILE2
 #define BT_PRO3 BT_PROFILE3
 #define BT_PRO4 BT_PROFILE4
 #define BT_PRO5 BT_PROFILE5
 #define BT_RST  BT_RESET
+#else
+#define BT_TOGG KC_TRNS
+#define BT_PAI  KC_TRNS
+#define BT_PRO1 KC_TRNS
+#define BT_PRO2 KC_TRNS
+#define BT_PRO3 KC_TRNS
+#define BT_PRO4 KC_TRNS
+#define BT_PRO5 KC_TRNS
+#define BT_RST  KC_TRNS
 #endif
+
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         /* Windows Base
@@ -98,7 +103,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [WINFN] = LAYOUT_65_ansi(
         _______,    KC_BRID,    KC_BRIU,    KC_TASK,    KC_FLXP,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,     KC_PSCR,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    BT_PRO4,    BT_PRO5,    _______,    _______,    _______,    _______,    BT_PAIR,    KC_HOME,    KC_END,     RGB_MOD,     KC_INS,
-        _______,    _______,    RK_MAC,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,     KC_PAUS,
+        _______,    _______,    KC_MAC,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,     KC_PAUS,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_HUI,    _______,    _______,    MO(FNS),    RGB_VAI,     KC_SCRL,
         QK_BOOT,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,     RGB_SPI
     ),
@@ -138,7 +143,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [MACFN] = LAYOUT_65_ansi(
         _______,    KC_BRID,    KC_BRIU,    KC_MCTL,    KC_LPAD,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,    KC_PSCR,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    BT_PRO4,    BT_PRO5,    _______,    _______,    _______,    _______,    BT_PAIR,    KC_HOME,    KC_END,     RGB_MOD,    KC_INS,
-        _______,    RK_WIN,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    KC_BRK,
+        _______,    KC_WIN,     _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    KC_BRK,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_HUI,    _______,    _______,    MO(FNS),    RGB_VAI,    KC_SCRL,
         QK_BOOT,    _______,    _______,                                        _______,                            _______,    _______,    _______,    RGB_SPD,    RGB_VAD,    RGB_SPI
     ),
@@ -150,7 +155,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴─────┼───┤
      * │      │   │   │   │   │   │   │   │   │   │   │   │        │   │
      * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬───┼───┤
-     * │        │   │   │   │   │   │   │   │   │   │   │      │SAI│   │
+     * │        │   │   │   │   │   │NKR│   │   │   │   │      │SAI│   │
      * ├────┬───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┤
      * │    │    │    │                        │   │   │   │   │SAD│   │
      * └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┘
@@ -159,14 +164,13 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,    KC_F1,      KC_F2,      KC_F3,      KC_F4,      KC_F5,      KC_F6,      KC_F7,      KC_F8,      KC_F9,      KC_F10,     KC_F11,     KC_F12,     _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    BT_RST,     _______,    _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                _______,    _______,
-        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    RGB_SAI,    _______,
+        _______,                _______,    _______,    _______,    _______,    _______,    NK_TOGG,    _______,    _______,    _______,    _______,    _______,    RGB_SAI,    _______,
         _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,    _______,    RGB_SAD,    _______
     )
 };
 
-
+#ifdef BLUETOOTH_ENABLE
 static bool bt_mode = FALSE;
-
 
 bool dip_switch_update_user(uint8_t index, bool active) {
     switch (index) {
@@ -184,16 +188,16 @@ bool dip_switch_update_user(uint8_t index, bool active) {
     }
     return true;
 }
-
+#endif
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
-        case RK_WIN:
+        case KC_WIN:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(WINBASE);
             }
             return false;
-        case RK_MAC:
+        case KC_MAC:
             if(record->event.pressed) {
                 set_single_persistent_default_layer(MACBASE);
             }
@@ -220,10 +224,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (host_keyboard_led_state().caps_lock) {
         // Set capslock key to orange (capslock is led number 30)
+#ifdef BLUETOOTH_ENABLE
         if(where_to_send() == OUTPUT_BLUETOOTH)
             rgb_matrix_set_color(CAPS_LOCK_LED, RGB_BLUE);
         else
             rgb_matrix_set_color(CAPS_LOCK_LED, RGB_ORANGE);
+#else
+        rgb_matrix_set_color(CAPS_LOCK_LED, RGB_ORANGE);
+#endif
     }
     return true;
 }
