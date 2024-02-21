@@ -96,7 +96,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * └────┴────┴────┴────────────────────────┴────┴────┴────┴────┘
      */
     [WINFN] = LAYOUT_60_ansi(
-        KC_GRV,     KC_BRIU,    KC_BRID,    KC_TASK,    KC_FLXP,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,
+        KC_GRV,     KC_BRID,    KC_BRIU,    KC_TASK,    KC_FLXP,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    _______,    _______,    KC_PSCR,    KC_SCRL,    KC_PAUS,    _______,    BT_PAI ,    RGB_VAD,    RGB_VAI,    RGB_MOD,
         _______,    _______,    KC_MAC,     _______,    _______,    _______,    KC_INS,     KC_HOME,    KC_PGUP,    _______,    RGB_SPD,    RGB_SPI,                _______,
         _______,                _______,    _______,    _______,    _______,    _______,    KC_DEL,     KC_END,     KC_PGDN,    RGB_HUI,    KC_UP,      MO(FNS),
@@ -136,7 +136,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * └────┴────┴────┴────────────────────────┴────┴────┴────┴────┘
      */
     [MACFN] = LAYOUT_60_ansi(
-        KC_GRV,     KC_BRIU,    KC_BRID,    KC_MCTL,    KC_LPAD,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,
+        KC_GRV,     KC_BRID,    KC_BRIU,    KC_MCTL,    KC_LPAD,    RGB_VAD,    RGB_VAI,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,    KC_VOLU,    _______,
         _______,    BT_PRO1,    BT_PRO2,    BT_PRO3,    _______,    _______,    KC_PSCR,    KC_SCRL,    KC_PAUS,    _______,    BT_PAI,     RGB_VAD,    RGB_VAI,    RGB_MOD,
         _______,    KC_WIN,     _______,    _______,    _______,    _______,    KC_INS,     KC_HOME,    KC_PGUP,    _______,    RGB_SPD,    RGB_SPI,                _______,
         _______,                KC_MUTE,    KC_VOLD,    KC_VOLU,    KC_MPRV,    KC_MNXT,    KC_DEL,     KC_END,     KC_PGDN,    RGB_HUI,    KC_UP,      MO(FNS),
