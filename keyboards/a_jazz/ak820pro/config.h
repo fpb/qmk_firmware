@@ -21,3 +21,5 @@
 
 /* Configure the effects:                                              */
 //#define RGB_MATRIX_TYPING_HEATMAP_DECREASE_DELAY_MS 50
+
+#define SPI_DRIVER SPID0
