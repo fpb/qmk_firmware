@@ -8,7 +8,5 @@
 
 #define PANEL_DC        D14
 #define PANEL_CS        B8
-#define PANEL_CLK       SCK0
-#define PANEL_MOSI      MOSI0
 #define PANEL_RST       A17
 #define PANEL_BKL       A16
