@@ -11,4 +11,4 @@
 #define PANEL_CLK       SCK0
 #define PANEL_MOSI      MOSI0
 #define PANEL_RST       A17
-#define PANEL_BLK       A16
+#define PANEL_BKL       A16

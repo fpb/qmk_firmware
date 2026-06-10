@@ -11,10 +11,10 @@
     "dynamic_keymap": {
         "layer_count": 5
     },
-    // "indicators": {
-    //     "caps_lock": "D15",
-    //     "on_state": 0
-    // },
+    "indicators": {
+        "caps_lock": "D15",
+        "on_state": 1
+    },
     "features": {
         "audio": false,
         "backlight": false,
@@ -41,7 +41,7 @@
     "matrix_pins": {
         "cols": [ "A4", "A5", "C0", "C1", "C2", "C3", "A6", "A7", "C4", "C5", "C6", "C7", "C14", "C8", "C9" ],  
         "rows": [ "B14", "B15", "B19",  "D19", "A19", "A18" ]
-    },
+    }/*,
 
 
     "rgb_matrix": {
@@ -124,7 +124,7 @@
             { "matrix": [4,13], "x": 209, "y": 64, "flags": 4},
             { "matrix": [4,14], "x": 224, "y": 64, "flags": 4}
         ]
-    },
+    },*/
     "layouts": {
         "LAYOUT_82_ansi": {
             "layout": [
