@@ -27,3 +27,4 @@
 #define SPI_MOSI_PIN    D2
 #define SPI_SCK_PIN     D0
 #define SPI_MISO_PIN    NO_PIN
+#define SPI_SS_PIN      B8

@@ -25,14 +25,14 @@
         "mousekey": false,
         "nkro": true,
         "rgb_matrix": false,
-         "dip_switch": true//,
-    //     "encoder": false
+         "dip_switch": true/*,
+         "encoder": true*/
     },
-    // "encoder": {
-    //      "enabled": true,
-    //      "rotary": [{ "pin_a": "B0", "pin_b": "B1", "resolution": 4 }]
-    // },
-    "dip_switch": {"pins": [ "B1"]},
+     /*"encoder": {
+          //"enabled": true,
+          "rotary": [{ "pin_a": "A10", "pin_b": "B2", "resolution": 4 }]
+    },*/
+    "dip_switch": {"pins": [ "B1"/*, "B12", "B13"*/]},
     "debounce": 5,
     "board": "SN_SN32F290",
     "bootloader": "sn32-dfu",
