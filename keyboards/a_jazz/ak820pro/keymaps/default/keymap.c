@@ -158,29 +158,16 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     }
 }
 
-/*
-bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
-
-    if (host_keyboard_led_state().caps_lock) {
-        // Set capslock key to orange (capslock is led number 30)
-        rgb_matrix_set_color(CAPS_LOCK_LED, 255, 130, 15);
+#if defined(ENCODER_ENABLE)
+bool encoder_update_user(uint8_t index, bool clockwise) {
+    if (index == 0) { // O seu primeiro (e único) encoder
+        if (clockwise) {
+            tap_code(KC_VOLU); // Roda para a direita -> Aumenta Volume
+        } else {
+            tap_code(KC_VOLD); // Roda para a esquerda -> Diminui Volume
+        }
     }
-        
-    return false;
-
+    return false; // Retorne false para o QMK saber que o input já foi tratado
 }
-*/
+#endif
 
-// void keyboard_pre_init_user(void) {
-//     // 1. Configure the pin as an output
-//     setPinOutput(B2); // Replace A0 with your target pin (e.g., B5, C13, etc.)
-
-//     // 2. Initialize it to your desired value
-//     writePinLow(B2); // Sets the pin to HIGH (3.3V)
-    
-//     // OR 
-//     // writePinLow(A0); // Sets the pin to LOW (GND)
-    
-//     // OR dynamically using a boolean value (true = HIGH, false = LOW)
-//     // writePin(A0, true); 
-// }

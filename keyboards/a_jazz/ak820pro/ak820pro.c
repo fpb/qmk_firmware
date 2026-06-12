@@ -58,6 +58,8 @@ void dummy(void) {
 
 __attribute__((weak)) void keyboard_pre_init_user(void);
 
+static bool msg_encoder_last_A = true;
+
 void keyboard_pre_init_kb(void) {
     
     // 1. Ativa o Clock global de GPIO (Bit 3 do registador AHBCLKEN)
@@ -74,15 +76,24 @@ void keyboard_pre_init_kb(void) {
     SN_PFPA->SPI_b.SCK0  = 0b11; 
     SN_PFPA->SPI_b.SEL0  = 0b10;     
 
+    // Configure BT/2.4G switch
     palSetPadMode(GPIOB, 12, PAL_MODE_INPUT_PULLUP);
     palSetPadMode(GPIOB, 13, PAL_MODE_INPUT_PULLUP);
 
+    // Configure Win lock and charing leds as output
     palSetPadMode(GPIOC, 15, PAL_MODE_OUTPUT_PUSHPULL); // P3.15 -> LED BT
     palSetPadMode(GPIOB, 18, PAL_MODE_OUTPUT_PUSHPULL); // P1.18 -> LED 2.4G
 
+    // Turn off LEDS
     palClearPad(GPIOC, 15);
     palClearPad(GPIOB, 18);
 
+    // Configure rotary encoder pins
+    palSetPadMode(GPIOA, 10, PAL_MODE_INPUT_PULLUP);
+    palSetPadMode(GPIOB, 2,  PAL_MODE_INPUT_PULLUP);
+
+    
+    msg_encoder_last_A = palReadPad(GPIOA, 10);
 
     // dummy();
     // dummy();
@@ -120,4 +131,24 @@ void housekeeping_task_kb(void) {
             palClearPad(GPIOB, 18);
         }
     }
+
+
+    bool current_A = palReadPad(GPIOA, 10);
+    bool current_B = palReadPad(GPIOB, 2);
+
+    // Detetar se o pino A mudou de estado (Transição de sinal)
+    if (current_A != msg_encoder_last_A) {
+        // Se o pino A mudou, o estado do pino B diz-nos a direção
+        if (current_A == current_B) {
+            // Rotação no sentido dos ponteiros do relógio (Clockwise)
+            tap_code(KC_VOLU); // Aumenta Volume
+        } else {
+            // Rotação no sentido inverso (Counter-Clockwise)
+            tap_code(KC_VOLD); // Diminui Volume
+        }
+    }
+    // Atualiza o histórico para o próximo ciclo
+    msg_encoder_last_A = current_A;
+
+
 }
