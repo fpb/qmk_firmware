@@ -29,7 +29,7 @@
          "encoder": true
     },
     "encoder": {
-          "rotary": [{ "pin_a": "A10", "pin_b": "B2", "resolution": 2 }]
+          "rotary": [{ "pin_a": "B2", "pin_b": "A10", "resolution": 2 }]
     },
     "dip_switch": {"pins": [ "B1"/*, "B12", "B13"*/]},
     "debounce": 5,
