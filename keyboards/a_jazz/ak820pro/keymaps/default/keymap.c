@@ -125,6 +125,12 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
     )
 };
+void keyboard_pre_init_user(void){
+    gpio_set_pin_output(LED_WINLOCK_PIN);
+    gpio_set_pin_output(LED_CHARGING_PIN);
+}
+void keyboard_post_init_user(void) {
+}
 
 bool dip_switch_update_user(uint8_t index, bool active) {
     if (index == 0) {

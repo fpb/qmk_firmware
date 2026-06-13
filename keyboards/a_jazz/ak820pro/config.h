@@ -28,3 +28,6 @@
 #define SPI_SCK_PIN     D0
 #define SPI_MISO_PIN    NO_PIN
 #define SPI_SS_PIN      B8
+
+#define LED_WINLOCK_PIN     C15
+#define LED_CHARGING_PIN    B18

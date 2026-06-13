@@ -6,7 +6,7 @@
     "usb": {
         "vid": "0x0C45",
         "pid": "0x8009",
-        "device_version": "1.1.3"
+        "device_version": "1.0.0"
     },
     "dynamic_keymap": {
         "layer_count": 5
@@ -25,13 +25,12 @@
         "mousekey": false,
         "nkro": true,
         "rgb_matrix": false,
-         "dip_switch": true/*,
-         "encoder": true*/
+         "dip_switch": true,
+         "encoder": true
     },
-     /*"encoder": {
-          //"enabled": true,
-          "rotary": [{ "pin_a": "A10", "pin_b": "B2", "resolution": 4 }]
-    },*/
+    "encoder": {
+          "rotary": [{ "pin_a": "A10", "pin_b": "B2", "resolution": 2 }]
+    },
     "dip_switch": {"pins": [ "B1"/*, "B12", "B13"*/]},
     "debounce": 5,
     "board": "SN_SN32F290",

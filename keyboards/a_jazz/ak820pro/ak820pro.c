@@ -1,11 +1,6 @@
 #include "ak820pro.h"
 
 #include "gpio.h"
-#define TOSTRING(x) #x
-#define STRINGIFY(x) TOSTRING(x)
-#pragma message "LED_CAPS_LOCK_PIN = " STRINGIFY(LED_CAPS_LOCK_PIN)
-#pragma message "LED_PIN_ON_STATE = " STRINGIFY(LED_PIN_ON_STATE)
-
 
 #include <qp.h>
 
@@ -27,7 +22,7 @@ void keyboard_post_init_kb(void) {
     
 
     qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
-    //qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 255, true);
+    qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
     
     // LCD backlight on
     gpio_set_pin_output(PANEL_BKL);
@@ -58,52 +53,58 @@ void dummy(void) {
 
 __attribute__((weak)) void keyboard_pre_init_user(void);
 
-static bool msg_encoder_last_A = true;
+//static bool msg_encoder_last_A = true;
+
+void early_hardware_init_pre(void) {
+    SN_PFPA->SPI_b.MISO0 = 0b11; 
+    SN_PFPA->SPI_b.MOSI0 = 0b11; 
+    SN_PFPA->SPI_b.SCK0  = 0b11; 
+    SN_PFPA->SPI_b.SEL0  = 0b10;
+}
 
 void keyboard_pre_init_kb(void) {
     
     // 1. Ativa o Clock global de GPIO (Bit 3 do registador AHBCLKEN)
-    SN_SYS1->AHBCLKEN |= (1 << 3); 
+    //SN_SYS1->AHBCLKEN |= (1 << 3); 
 
     // 2. Ativa o Clock do periférico SPI0 (Bit 0 do registador APBCP0)
-    SN_SYS1->APBCP0 |= (1 << 0); 
+    //SN_SYS1->APBCP0 |= (1 << 0); 
 
-    __asm__ volatile("nop; nop; nop; nop;");
+    // __asm__ volatile("nop; nop; nop; nop;");
 
-    // 3. Configuração dos pinos do teclado D15
-    SN_PFPA->SPI_b.MISO0 = 0b11; 
-    SN_PFPA->SPI_b.MOSI0 = 0b11; 
-    SN_PFPA->SPI_b.SCK0  = 0b11; 
-    SN_PFPA->SPI_b.SEL0  = 0b10;     
+    // SN_PFPA->SPI_b.MISO0 = 0b11; 
+    // SN_PFPA->SPI_b.MOSI0 = 0b11; 
+    // SN_PFPA->SPI_b.SCK0  = 0b11; 
+    // SN_PFPA->SPI_b.SEL0  = 0b10;     
 
     // Configure BT/2.4G switch
-    palSetPadMode(GPIOB, 12, PAL_MODE_INPUT_PULLUP);
-    palSetPadMode(GPIOB, 13, PAL_MODE_INPUT_PULLUP);
+    //palSetPadMode(GPIOB, 12, PAL_MODE_INPUT_PULLUP);
+    //palSetPadMode(GPIOB, 13, PAL_MODE_INPUT_PULLUP);
 
     // Configure Win lock and charing leds as output
-    palSetPadMode(GPIOC, 15, PAL_MODE_OUTPUT_PUSHPULL); // P3.15 -> LED BT
-    palSetPadMode(GPIOB, 18, PAL_MODE_OUTPUT_PUSHPULL); // P1.18 -> LED 2.4G
+    //palSetPadMode(GPIOC, 15, PAL_MODE_OUTPUT_PUSHPULL); // P3.15 -> LED BT
+    //palSetPadMode(GPIOB, 18, PAL_MODE_OUTPUT_PUSHPULL); // P1.18 -> LED 2.4G
 
     // Turn off LEDS
-    palClearPad(GPIOC, 15);
-    palClearPad(GPIOB, 18);
+    //palClearPad(GPIOC, 15);
+    //palClearPad(GPIOB, 18);
 
     // Configure rotary encoder pins
-    palSetPadMode(GPIOA, 10, PAL_MODE_INPUT_PULLUP);
-    palSetPadMode(GPIOB, 2,  PAL_MODE_INPUT_PULLUP);
+//    palSetPadMode(GPIOA, 10, PAL_MODE_INPUT_PULLUP);
+//    palSetPadMode(GPIOB, 2,  PAL_MODE_INPUT_PULLUP);
 
-    
-    msg_encoder_last_A = palReadPad(GPIOA, 10);
+
+//    msg_encoder_last_A = palReadPad(GPIOA, 10);
 
     // dummy();
     // dummy();
 }
 
-uint8_t hardware_boot_mode = 0; // 0 = USB, 1 = BT, 2 = 2.4G
+//uint8_t hardware_boot_mode = 0; // 0 = USB, 1 = BT, 2 = 2.4G
 
 void housekeeping_task_kb(void) {
     // Leitura direta dos buffers dos sliders (sem interrupções)
-    bool pin_12_low = (palReadPad(GPIOB, 12) == 0);
+/*    bool pin_12_low = (palReadPad(GPIOB, 12) == 0);
     bool pin_13_low = (palReadPad(GPIOB, 13) == 0);
 
     if (pin_12_low) {
@@ -131,8 +132,8 @@ void housekeeping_task_kb(void) {
             palClearPad(GPIOB, 18);
         }
     }
-
-
+*/
+/*
     bool current_A = palReadPad(GPIOA, 10);
     bool current_B = palReadPad(GPIOB, 2);
 
@@ -149,6 +150,25 @@ void housekeeping_task_kb(void) {
     }
     // Atualiza o histórico para o próximo ciclo
     msg_encoder_last_A = current_A;
+*/
 
+}
 
+__attribute__((weak)) bool encoder_update_user(uint8_t, bool);
+
+bool encoder_update_kb(uint8_t index, bool clockwise) {
+    // if (!encoder_update_user(index, clockwise)) {
+    //   return false; /* Don't process further events if user function exists and returns false */
+    // }
+    
+    //palClearPad(GPIOC, 15);
+
+    if (index == 0) { /* First encoder */
+        if (clockwise) {
+            tap_code(KC_VOLU);
+        } else {
+            tap_code(KC_VOLD);
+        }
+    } 
+    return true;
 }
