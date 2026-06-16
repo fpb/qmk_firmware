@@ -31,3 +31,5 @@
 
 #define LED_WINLOCK_PIN     C15
 #define LED_CHARGING_PIN    B18
+
+#define CORTEX_ENABLE_WFI_IDLE FALSE

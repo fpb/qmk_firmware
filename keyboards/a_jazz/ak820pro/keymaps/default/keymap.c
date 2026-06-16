@@ -25,6 +25,10 @@ enum layer_names {
     MACFN
 };
 
+enum custom_keycodes {
+    WIN_LOCK = SAFE_RANGE
+};
+
 
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
 #define KC_FLXP LGUI(KC_E)          // Windows file explorer
@@ -76,7 +80,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                 _______,    _______,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    
-        _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
+        _______,    WIN_LOCK,   _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
     ),
     /* Mac Base
      * ┌───┬┬───┬───┬───┬───┬┬───┬───┬───┬───┬┬───┬───┬───┬───┬┬───┬┬───┐
@@ -129,19 +133,81 @@ void keyboard_pre_init_user(void){
     gpio_set_pin_output(LED_WINLOCK_PIN);
     gpio_set_pin_output(LED_CHARGING_PIN);
 }
+
+#include <qp.h>
+
+#include "graphics/qmklogo.qgf.h"
+#include "graphics/robotomono20.qff.h"
+
+static painter_device_t qp_display;
+static painter_image_handle_t qp_image;
+static painter_font_handle_t qp_font;
+
 void keyboard_post_init_user(void) {
+    qp_display = qp_gc9107_make_spi_device(
+        PANEL_WIDTH, 
+        PANEL_HEIGHT, 
+        PANEL_CS, 
+        PANEL_DC, 
+        PANEL_RST, 
+        4, //spi_divisor, 
+        0  //spi_mode
+    );         // Create the display
+    
+
+    qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
+    qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
+    
+    // LCD backlight on
+    gpio_set_pin_output(PANEL_BKL);
+    gpio_write_pin_high(PANEL_BKL);
+    
+    qp_font = qp_load_font_mem(font_robotomono20);
+    qp_image = qp_load_image_mem(gfx_qmklogo);
+
+    bool drawn = false;
+
+    if(qp_image != NULL) {
+        drawn = qp_drawimage(qp_display, 0, 0, qp_image);
+        if(drawn) qp_rect(qp_display, 0, 0, PANEL_WIDTH/2, PANEL_HEIGHT/2, 64, 255, 255, true);
+        else      qp_rect(qp_display, 0, 0, PANEL_WIDTH/2, PANEL_HEIGHT/2, 0, 255, 255, true);
+
+    }
+
+    for (int i = 0; i < PANEL_WIDTH; ++i) {
+        qp_line(qp_display, i, (drawn?64:0), i, (drawn?64:0)+7, i, 255, 255);
+    }
+
+    if (qp_font != NULL) {        
+        // 3. Draw the string
+        // Arguments: device, X-pixel, Y-pixel, font_handle, string
+        qp_drawtext(qp_display, 0, 20, qp_font, "Hello QMK!");
+    }
+
+    qp_flush(qp_display);
 }
+
+// void keyboard_post_init_user(void) {
+// }
+
+
+bool win_lock_active = false;
 
 bool dip_switch_update_user(uint8_t index, bool active) {
     if (index == 0) {
         if (active) {
             set_single_persistent_default_layer(WINBASE);
+            win_lock_active = false; // Desativa o Win Lock ao mudar para o modo Windows
+            gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
         } else {
             set_single_persistent_default_layer(MACBASE);
+            win_lock_active = false; // Desativa o Win Lock ao mudar para o modo Mac
+            gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
         }
     }
     return true;
 }
+
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
@@ -157,6 +223,28 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 host_consumer_send(0x2A0);
             } else {
                 host_consumer_send(0);
+            }
+            return false;  // Skip all further processing of this key
+        case KC_LGUI:
+            if (record->event.pressed) {
+                if(win_lock_active) {
+                    // Se o Win Lock estiver ativo, bloqueia a tecla Alt
+                    return false; // Skip processing this key
+                }
+            }
+            return true; // Process normally if Win Lock is not active
+        case WIN_LOCK:
+            if (record->event.pressed) {
+                // Toggle the state of the Win Lock
+                win_lock_active = !win_lock_active;
+
+                if (win_lock_active) {
+                //     // Ativa o Win Lock: Acende o LED e bloqueia a tecla Windows
+                    gpio_write_pin_high(LED_WINLOCK_PIN); // Acende o LED do Win Lock
+                } else {
+                //     // Desativa o Win Lock: Apaga o LED e desbloqueia a tecla Windows
+                    gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
+                }
             }
             return false;  // Skip all further processing of this key
         default:
@@ -177,3 +265,6 @@ bool encoder_update_user(uint8_t index, bool clockwise) {
 }
 #endif
 
+void housekeeping_task_user(void) {
+
+}
