@@ -191,29 +191,28 @@ void keyboard_post_init_user(void) {
 
     if(qp_image != NULL) {
         drawn = qp_drawimage(qp_display, 0, 0, qp_image);
-        if(drawn) qp_rect(qp_display, 0, 0, PANEL_WIDTH/2, PANEL_HEIGHT/2, 64, 255, 255, true);
-        else      qp_rect(qp_display, 0, 0, PANEL_WIDTH/2, PANEL_HEIGHT/2, 0, 255, 255, true);
+        if(drawn) qp_rect(qp_display, PANEL_WIDTH/4, PANEL_HEIGHT/4, 3*PANEL_WIDTH/4, 3*PANEL_HEIGHT/4, 64, 255, 255, true); // Green
+        else      qp_rect(qp_display, PANEL_WIDTH/4, PANEL_HEIGHT/4, 3*PANEL_WIDTH/4, 3*PANEL_HEIGHT/4, 0, 255, 255, true);  // Red
 
     }
 
-    for (int i = 0; i < PANEL_WIDTH; ++i) {
-        qp_line(qp_display, i, (drawn?64:0), i, (drawn?64:0)+7, i, 255, 255);
-    }
-
+    // Draw a border around the display and a diagonal cross
     qp_line(qp_display, 0, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
+    qp_line(qp_display, PANEL_WIDTH-1, 0, 0, PANEL_HEIGHT-1, 0, 0, 255);
+    qp_line(qp_display, 0, 0, PANEL_WIDTH-1, 0, 0, 0, 255);
+    qp_line(qp_display, PANEL_WIDTH-1, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
+    qp_line(qp_display, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, PANEL_HEIGHT-1, 0, 0, 255);
+    qp_line(qp_display, 0, PANEL_HEIGHT-1, 0, 0, 0, 0, 255);
 
     if (qp_font != NULL) {        
+        int16_t text_width = qp_textwidth(qp_font, "Hello QMK!");
         // 3. Draw the string
         // Arguments: device, X-pixel, Y-pixel, font_handle, string
-        qp_drawtext(qp_display, 0, 20, qp_font, "Hello QMK!");
+        qp_drawtext(qp_display, (PANEL_WIDTH - text_width) / 2, 20, qp_font, "Hello QMK!");
     }
 
     qp_flush(qp_display);
 }
-
-// void keyboard_post_init_user(void) {
-// }
-
 
 bool win_lock_active = false;
 
@@ -221,13 +220,11 @@ bool dip_switch_update_user(uint8_t index, bool active) {
     if (index == 0) {
         if (active) {
             set_single_persistent_default_layer(WINBASE);
-            win_lock_active = false; // Desativa o Win Lock ao mudar para o modo Windows
-            gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
         } else {
             set_single_persistent_default_layer(MACBASE);
-            win_lock_active = false; // Desativa o Win Lock ao mudar para o modo Mac
-            gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
         }
+        win_lock_active = false; // resets the Win Lock when switching to Windows mode
+        gpio_write_pin_low(LED_WINLOCK_PIN); // Turns off the Win Lock LED
     }
     return true;
 }
@@ -277,14 +274,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 }
 
 bool encoder_update_user(uint8_t index, bool clockwise) {
-    if (index == 0) { // O seu primeiro (e único) encoder
+    if (index == 0) { // The only encoder we have
         if (clockwise) {
-            tap_code(KC_VOLU); // Roda para a direita -> Aumenta Volume
+            tap_code(KC_VOLU); // Clockwise -> Incresase Volume
         } else {
-            tap_code(KC_VOLD); // Roda para a esquerda -> Diminui Volume
+            tap_code(KC_VOLD); // Counter-clockwise -> Decrease Volume
         }
     }
-    return false; // Retorne false para o QMK saber que o input já foi tratado
+    return false; // Skip all further processing of this event
 }
 
 void housekeeping_task_user(void) {
