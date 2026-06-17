@@ -32,4 +32,8 @@
 #define LED_WINLOCK_PIN     C15
 #define LED_CHARGING_PIN    B18
 
+#define CHARGE_CHRG_PIN   B16   // ADC4056 CHRG#  (input, active low)
+#define CHARGE_STDBY_PIN  B17   // ADC4056 STDBY# (input, active low)
+
+
 #define CORTEX_ENABLE_WFI_IDLE FALSE

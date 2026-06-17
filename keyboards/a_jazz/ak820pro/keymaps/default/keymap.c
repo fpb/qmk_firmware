@@ -143,7 +143,29 @@ static painter_device_t qp_display;
 static painter_image_handle_t qp_image;
 static painter_font_handle_t qp_font;
 
+static inline void charging_led_init(void) {
+    gpio_set_pin_input_high(CHARGE_CHRG_PIN);   // input with pull-up
+    gpio_set_pin_input_high(CHARGE_STDBY_PIN);  // input with pull-up
+}
+
+static inline void charging_led_update(void) {
+    static uint16_t last_check = 0;
+    if (timer_elapsed(last_check) < 100) return;  // check every 100ms
+    last_check = timer_read();
+
+    bool chrg_active  = !gpio_read_pin(CHARGE_CHRG_PIN);
+    bool stdby_active =  gpio_read_pin(CHARGE_STDBY_PIN);
+    bool is_charging = chrg_active && stdby_active;
+
+    gpio_write_pin(LED_CHARGING_PIN, is_charging);
+}
+
+
+
 void keyboard_post_init_user(void) {
+
+    charging_led_init();  // Initialize the charging LED
+    
     qp_display = qp_gc9107_make_spi_device(
         PANEL_WIDTH, 
         PANEL_HEIGHT, 
@@ -151,7 +173,7 @@ void keyboard_post_init_user(void) {
         PANEL_DC, 
         PANEL_RST, 
         4, //spi_divisor, 
-        0  //spi_mode
+        3  //spi_mode
     );         // Create the display
     
 
@@ -177,6 +199,8 @@ void keyboard_post_init_user(void) {
     for (int i = 0; i < PANEL_WIDTH; ++i) {
         qp_line(qp_display, i, (drawn?64:0), i, (drawn?64:0)+7, i, 255, 255);
     }
+
+    qp_line(qp_display, 0, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
 
     if (qp_font != NULL) {        
         // 3. Draw the string
@@ -252,7 +276,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     }
 }
 
-#if defined(ENCODER_ENABLE)
 bool encoder_update_user(uint8_t index, bool clockwise) {
     if (index == 0) { // O seu primeiro (e único) encoder
         if (clockwise) {
@@ -263,8 +286,7 @@ bool encoder_update_user(uint8_t index, bool clockwise) {
     }
     return false; // Retorne false para o QMK saber que o input já foi tratado
 }
-#endif
 
 void housekeeping_task_user(void) {
-
+    charging_led_update();
 }
