@@ -160,6 +160,8 @@ static inline void charging_led_update(void) {
     gpio_write_pin(LED_CHARGING_PIN, is_charging);
 }
 
+#define LCD_OFFSET_X 1
+#define LCD_OFFSET_Y 2
 
 
 void keyboard_post_init_user(void) {
@@ -178,6 +180,8 @@ void keyboard_post_init_user(void) {
     
 
     qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
+    qp_set_viewport_offsets(qp_display, LCD_OFFSET_X, LCD_OFFSET_Y);
+
     qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
     
     // LCD backlight on
