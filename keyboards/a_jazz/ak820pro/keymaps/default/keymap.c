@@ -291,17 +291,26 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     }
 }
 
-bool encoder_update_user(uint8_t index, bool clockwise) {
-    if (index == 0) { // The only encoder we have
-        if (clockwise) {
-            tap_code(KC_VOLU); // Clockwise -> Incresase Volume
-        } else {
-            tap_code(KC_VOLD); // Counter-clockwise -> Decrease Volume
-        }
-    }
-    return false; // Skip all further processing of this event
-}
+// bool encoder_update_user(uint8_t index, bool clockwise) {
+//     if (index == 0) { // The only encoder we have
+//         if (clockwise) {
+//             tap_code(KC_VOLU); // Clockwise -> Incresase Volume
+//         } else {
+//             tap_code(KC_VOLD); // Counter-clockwise -> Decrease Volume
+//         }
+//     }
+//     return false; // Skip all further processing of this event
+// }
 
 void housekeeping_task_user(void) {
     charging_led_update();
 }
+
+#if defined(ENCODER_MAP_ENABLE)
+const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
+    [WIN_BASE] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
+    [WIN_FN] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
+    [MAC_BASE] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
+    [MAC_FN] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) }
+};
+#endif
