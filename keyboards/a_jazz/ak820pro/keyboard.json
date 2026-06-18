@@ -31,7 +31,7 @@
     "encoder": {
           "rotary": [{ "pin_a": "B2", "pin_b": "A10", "resolution": 2 }]
     },
-    "dip_switch": {"pins": [ "B1"/*, "B12", "B13"*/]},
+    "dip_switch": {"pins": [ "B1", "B12", "B13"]},
     "debounce": 5,
     "board": "SN_SN32F290",
     "bootloader": "sn32-dfu",

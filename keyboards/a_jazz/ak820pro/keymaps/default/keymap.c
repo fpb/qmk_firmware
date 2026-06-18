@@ -29,7 +29,6 @@ enum custom_keycodes {
     WIN_LOCK = SAFE_RANGE
 };
 
-
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
 #define KC_FLXP LGUI(KC_E)          // Windows file explorer
 #define KC_MCTL KC_MISSION_CONTROL  // Mission Control
@@ -88,7 +87,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * ├───┼┴──┬┴──┬┴──┬┴──┬┴┴─┬─┴─┬─┴─┬─┴─┬─┴┴┬──┴┬──┴┬──┴┬──┴┴──┬┴┼───┤
      * │ ~ │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │ 9 │ 0 │ - │ = │Backsp│ │HOM│
      * ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬────┼─┼───┤
-     * │ Tab │ Q │ W │ E │ R │ T │ Y │ U │ I │ O │ P │ [ │ ] │  \ │ │PGU│
+     * │ Tab │ Q │ W │ E │ R │ T │ Y │ U │ I │ O │ P │ [ │ ] │  \ │ │PGU│e
      * ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴────┼─┼───┤
      * │ Caps │ A │ S │ D │ F │ G │ H │ J │ K │ L │ ; │ ' │ Enter │ │PGD│
      * ├──────┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴────┬┬─┴─┼───┤
@@ -136,8 +135,11 @@ void keyboard_pre_init_user(void){
 
 #include <qp.h>
 
-#include "graphics/qmklogo.qgf.h"
+//#include "graphics/qmklogo.qgf.h"
+#include "graphics/sonixqmk.qgf.h"
 #include "graphics/robotomono20.qff.h"
+
+
 
 static painter_device_t qp_display;
 static painter_image_handle_t qp_image;
@@ -189,16 +191,12 @@ void keyboard_post_init_user(void) {
     gpio_write_pin_high(PANEL_BKL);
     
     qp_font = qp_load_font_mem(font_robotomono20);
-    qp_image = qp_load_image_mem(gfx_qmklogo);
-
-    bool drawn = false;
+    qp_image = qp_load_image_mem(gfx_sonixqmk);
 
     if(qp_image != NULL) {
-        drawn = qp_drawimage(qp_display, 0, 0, qp_image);
-        if(drawn) qp_rect(qp_display, PANEL_WIDTH/4, PANEL_HEIGHT/4, 3*PANEL_WIDTH/4, 3*PANEL_HEIGHT/4, 64, 255, 255, true); // Green
-        else      qp_rect(qp_display, PANEL_WIDTH/4, PANEL_HEIGHT/4, 3*PANEL_WIDTH/4, 3*PANEL_HEIGHT/4, 0, 255, 255, true);  // Red
-
+        qp_drawimage(qp_display, 0, 0, qp_image);    
     }
+    qp_close_image(qp_image);
 
     // Draw a border around the display and a diagonal cross
     qp_line(qp_display, 0, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
@@ -209,14 +207,15 @@ void keyboard_post_init_user(void) {
     qp_line(qp_display, 0, PANEL_HEIGHT-1, 0, 0, 0, 0, 255);
 
     if (qp_font != NULL) {        
-        int16_t text_width = qp_textwidth(qp_font, "Hello QMK!");
+        int16_t text_width = qp_textwidth(qp_font, "AK820Pro");
         // 3. Draw the string
         // Arguments: device, X-pixel, Y-pixel, font_handle, string
-        qp_drawtext(qp_display, (PANEL_WIDTH - text_width) / 2, 20, qp_font, "Hello QMK!");
+        qp_drawtext(qp_display, (PANEL_WIDTH - text_width), 96, qp_font, "AK820Pro");
     }
 
     qp_flush(qp_display);
 }
+
 
 bool win_lock_active = false;
 
@@ -230,11 +229,26 @@ bool dip_switch_update_user(uint8_t index, bool active) {
         win_lock_active = false; // resets the Win Lock when switching to Windows mode
         gpio_write_pin_low(LED_WINLOCK_PIN); // Turns off the Win Lock LED
     }
+    if(index == 1) {
+        if (active) {
+            gpio_write_pin_high(LED_WINLOCK_PIN); // Acende o LED do Win Lock
+        } else {
+            gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
+        }
+    }
+    if(index == 2) {
+        if (active) {
+            
+        } else {
+            
+        }
+    }
     return true;
 }
 
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+
     switch (keycode) {
         case KC_MISSION_CONTROL:
             if (record->event.pressed) {
