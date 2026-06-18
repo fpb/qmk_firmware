@@ -229,18 +229,18 @@ bool dip_switch_update_user(uint8_t index, bool active) {
         win_lock_active = false; // resets the Win Lock when switching to Windows mode
         gpio_write_pin_low(LED_WINLOCK_PIN); // Turns off the Win Lock LED
     }
-    if(index == 1) {
+    if(index == 1) { // Bluetooth switch
         if (active) {
-            gpio_write_pin_high(LED_WINLOCK_PIN); // Acende o LED do Win Lock
+            // Switch to Bluetooth mode: You can add any specific actions needed for Bluetooth mode here
         } else {
-            gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
+            // Switch to wired mode: You can add any specific actions needed for wired mode here
         }
     }
-    if(index == 2) {
+    if(index == 2) { // 2.4GHz switch
         if (active) {
-            
+            // Switch to 2.4GHz mode: You can add any specific actions needed for 2.4GHz mode here
         } else {
-            
+            // Switch to wired mode: You can add any specific actions needed for the other mode here
         }
     }
     return true;
@@ -290,17 +290,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             return true;  // Process all other keycodes normally
     }
 }
-
-// bool encoder_update_user(uint8_t index, bool clockwise) {
-//     if (index == 0) { // The only encoder we have
-//         if (clockwise) {
-//             tap_code(KC_VOLU); // Clockwise -> Incresase Volume
-//         } else {
-//             tap_code(KC_VOLD); // Counter-clockwise -> Decrease Volume
-//         }
-//     }
-//     return false; // Skip all further processing of this event
-// }
 
 void housekeeping_task_user(void) {
     charging_led_update();
