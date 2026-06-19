@@ -138,6 +138,7 @@ bool dip_switch_update_user(uint8_t index, bool active) {
             set_single_persistent_default_layer(WINBASE);
         } else {
             set_single_persistent_default_layer(MACBASE);
+            keymap_config.no_gui = false;
         }
     }
     if(index == 1) { // Bluetooth switch
