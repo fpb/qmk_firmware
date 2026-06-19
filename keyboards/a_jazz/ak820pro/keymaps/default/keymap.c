@@ -79,7 +79,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                 _______,    _______,
         _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    
-        _______,    WIN_LOCK,   _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
+        _______,    GU_TOGG,    _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
     ),
     /* Mac Base
      * ┌───┬┬───┬───┬───┬───┬┬───┬───┬───┬───┬┬───┬───┬───┬───┬┬───┬┬───┐
@@ -128,96 +128,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
     )
 };
-void keyboard_pre_init_user(void){
-    gpio_set_pin_output(LED_WINLOCK_PIN);
-    gpio_set_pin_output(LED_CHARGING_PIN);
-}
-
-#include <qp.h>
-
-//#include "graphics/qmklogo.qgf.h"
-#include "graphics/sonixqmk.qgf.h"
-#include "graphics/robotomono20.qff.h"
 
 
-
-static painter_device_t qp_display;
-static painter_image_handle_t qp_image;
-static painter_font_handle_t qp_font;
-
-static inline void charging_led_init(void) {
-    gpio_set_pin_input_high(CHARGE_CHRG_PIN);   // input with pull-up
-    gpio_set_pin_input_high(CHARGE_STDBY_PIN);  // input with pull-up
-}
-
-static inline void charging_led_update(void) {
-    static uint16_t last_check = 0;
-    if (timer_elapsed(last_check) < 100) return;  // check every 100ms
-    last_check = timer_read();
-
-    bool chrg_active  = !gpio_read_pin(CHARGE_CHRG_PIN);
-    bool stdby_active =  gpio_read_pin(CHARGE_STDBY_PIN);
-    bool is_charging = chrg_active && stdby_active;
-
-    gpio_write_pin(LED_CHARGING_PIN, is_charging);
-}
-
-#define LCD_OFFSET_X 1
-#define LCD_OFFSET_Y 2
-
-
-void keyboard_post_init_user(void) {
-
-    charging_led_init();  // Initialize the charging LED
-    
-    qp_display = qp_gc9107_make_spi_device(
-        PANEL_WIDTH, 
-        PANEL_HEIGHT, 
-        PANEL_CS, 
-        PANEL_DC, 
-        PANEL_RST, 
-        4, //spi_divisor, 
-        3  //spi_mode
-    );         // Create the display
-    
-
-    qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
-    qp_set_viewport_offsets(qp_display, LCD_OFFSET_X, LCD_OFFSET_Y);
-
-    qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
-    
-    // LCD backlight on
-    gpio_set_pin_output(PANEL_BKL);
-    gpio_write_pin_high(PANEL_BKL);
-    
-    qp_font = qp_load_font_mem(font_robotomono20);
-    qp_image = qp_load_image_mem(gfx_sonixqmk);
-
-    if(qp_image != NULL) {
-        qp_drawimage(qp_display, 0, 0, qp_image);    
-    }
-    qp_close_image(qp_image);
-
-    // Draw a border around the display and a diagonal cross
-    qp_line(qp_display, 0, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, PANEL_WIDTH-1, 0, 0, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, 0, 0, PANEL_WIDTH-1, 0, 0, 0, 255);
-    qp_line(qp_display, PANEL_WIDTH-1, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, 0, PANEL_HEIGHT-1, 0, 0, 0, 0, 255);
-
-    if (qp_font != NULL) {        
-        int16_t text_width = qp_textwidth(qp_font, "AK820Pro");
-        // 3. Draw the string
-        // Arguments: device, X-pixel, Y-pixel, font_handle, string
-        qp_drawtext(qp_display, (PANEL_WIDTH - text_width), 96, qp_font, "AK820Pro");
-    }
-
-    qp_flush(qp_display);
-}
-
-
-bool win_lock_active = false;
+//bool win_lock_active = false;
 
 bool dip_switch_update_user(uint8_t index, bool active) {
     if (index == 0) {
@@ -226,8 +139,6 @@ bool dip_switch_update_user(uint8_t index, bool active) {
         } else {
             set_single_persistent_default_layer(MACBASE);
         }
-        win_lock_active = false; // resets the Win Lock when switching to Windows mode
-        gpio_write_pin_low(LED_WINLOCK_PIN); // Turns off the Win Lock LED
     }
     if(index == 1) { // Bluetooth switch
         if (active) {
@@ -264,42 +175,17 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 host_consumer_send(0);
             }
             return false;  // Skip all further processing of this key
-        case KC_LGUI:
-            if (record->event.pressed) {
-                if(win_lock_active) {
-                    // Se o Win Lock estiver ativo, bloqueia a tecla Alt
-                    return false; // Skip processing this key
-                }
-            }
-            return true; // Process normally if Win Lock is not active
-        case WIN_LOCK:
-            if (record->event.pressed) {
-                // Toggle the state of the Win Lock
-                win_lock_active = !win_lock_active;
-
-                if (win_lock_active) {
-                //     // Ativa o Win Lock: Acende o LED e bloqueia a tecla Windows
-                    gpio_write_pin_high(LED_WINLOCK_PIN); // Acende o LED do Win Lock
-                } else {
-                //     // Desativa o Win Lock: Apaga o LED e desbloqueia a tecla Windows
-                    gpio_write_pin_low(LED_WINLOCK_PIN); // Apaga o LED do Win Lock
-                }
-            }
-            return false;  // Skip all further processing of this key
         default:
             return true;  // Process all other keycodes normally
     }
 }
 
-void housekeeping_task_user(void) {
-    charging_led_update();
-}
 
 #if defined(ENCODER_MAP_ENABLE)
 const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
-    [WIN_BASE] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
-    [WIN_FN] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
-    [MAC_BASE] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
-    [MAC_FN] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) }
+    [WINBASE] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
+    [WINFN] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
+    [MACBASE] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) },
+    [MACFN] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) }
 };
 #endif
