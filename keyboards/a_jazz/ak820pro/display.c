@@ -17,8 +17,118 @@
 #define PANEL_HEIGHT    128
 
 static painter_device_t qp_display;
-static painter_image_handle_t qp_image;
-static painter_font_handle_t qp_font;
+// static painter_image_handle_t qp_image;
+// static painter_font_handle_t qp_font;
+
+
+#define MODS_SHIFT ((get_mods() | get_oneshot_mods()) & MOD_MASK_SHIFT)
+#define MODS_CTRL ((get_mods() | get_oneshot_mods()) & MOD_MASK_CTRL)
+#define MODS_ALT ((get_mods() | get_oneshot_mods()) & MOD_MASK_ALT)
+#define MODS_GUI ((get_mods() | get_oneshot_mods()) & MOD_MASK_GUI)
+
+
+/* shared styles */
+lv_style_t style_screen;
+lv_style_t style_container;
+lv_style_t style_button;
+lv_style_t style_button_active;
+
+/* screens */
+static lv_obj_t *screen_home;
+
+// /* home screen content */
+static lv_obj_t *label_shift;
+static lv_obj_t *label_ctrl;
+static lv_obj_t *label_alt;
+static lv_obj_t *label_gui;
+static lv_obj_t *label_caps;
+
+lv_obj_t *create_button(lv_obj_t *parent, const char *text, lv_style_t *style, lv_style_t *style_pressed) {
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text);
+    lv_obj_add_style(label, style, 0);
+    lv_obj_add_style(label, style_pressed, LV_STATE_PRESSED);
+    return label;
+}
+
+void use_flex_row(void *obj) {
+    lv_obj_set_layout(obj, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+}
+
+void use_flex_column(void *obj) {
+    lv_obj_set_layout(obj, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+}
+
+void toggle_state(void *obj, lv_state_t state, bool enabled) {
+    if (enabled) {
+        lv_obj_add_state(obj, state);
+    } else {
+        lv_obj_clear_state(obj, state);
+    }
+}
+
+void init_styles(void) {
+    lv_style_init(&style_screen);
+    lv_style_set_bg_color(&style_screen, lv_color_black());
+
+    lv_style_init(&style_container);
+    lv_style_set_pad_top(&style_container, 0);
+    lv_style_set_pad_bottom(&style_container, 0);
+    lv_style_set_pad_left(&style_container, 0);
+    lv_style_set_pad_right(&style_container, 0);
+    lv_style_set_bg_opa(&style_container, 0);
+    lv_style_set_border_width(&style_container, 0);
+    lv_style_set_width(&style_container, lv_pct(100));
+    lv_style_set_height(&style_container, LV_SIZE_CONTENT);
+
+    lv_style_init(&style_button);
+    lv_style_set_pad_top(&style_button, 4);
+    lv_style_set_pad_bottom(&style_button, 4);
+    lv_style_set_pad_left(&style_button, 4);
+    lv_style_set_pad_right(&style_button, 4);
+    lv_style_set_radius(&style_button, 6);
+    lv_style_set_text_color(&style_button, lv_palette_main(LV_PALETTE_AMBER));
+
+    lv_style_init(&style_button_active);
+    lv_style_set_bg_color(&style_button_active, lv_palette_main(LV_PALETTE_AMBER));
+    lv_style_set_bg_opa(&style_button_active, LV_OPA_100);
+    lv_style_set_text_color(&style_button_active, lv_color_black());
+}
+
+void init_screen_home(void) {
+    screen_home = lv_scr_act();
+
+    lv_obj_add_style(screen_home, &style_screen, 0);
+    use_flex_column(screen_home);
+
+    lv_obj_t *mods = lv_obj_create(screen_home);
+    lv_obj_add_style(mods, &style_container, 0);
+    use_flex_column(mods);
+
+    lv_obj_t *mods_row1 = lv_obj_create(mods);
+    lv_obj_add_style(mods_row1, &style_container, 0);
+    use_flex_row(mods_row1);
+    label_gui = create_button(mods_row1, "GUI", &style_button, &style_button_active);
+    label_alt = create_button(mods_row1, "ALT", &style_button, &style_button_active);
+
+    lv_obj_t *mods_row2 = lv_obj_create(mods);
+    lv_obj_add_style(mods_row2, &style_container, 0);
+    use_flex_row(mods_row2);
+    label_ctrl  = create_button(mods_row2, "CTL", &style_button, &style_button_active);
+    label_shift = create_button(mods_row2, "SFT", &style_button, &style_button_active);
+
+    lv_obj_t *label_brand = lv_label_create(screen_home);
+    lv_label_set_text(label_brand, "ajazz ak820 pro");
+#if LV_FONT_MONTSERRAT_48
+    lv_obj_set_style_text_font(label_brand, &lv_font_montserrat_48, LV_PART_MAIN);
+#endif
+
+    label_caps = create_button(screen_home, "CAPS", &style_button, &style_button_active);
+}
 
 bool display_backlight_init(void) {
     gpio_set_pin_output(PANEL_BKL);
@@ -43,35 +153,19 @@ bool display_init_kb(void) {
 
     // LCD backlight on
     display_backlight_init();
+    //qp_power(qp_display, true);
 
-    qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
-        
-    qp_font = qp_load_font_mem(font_robotomono20);
-    qp_image = qp_load_image_mem(gfx_sonixqmk);
+    qp_lvgl_attach(qp_display);
 
-    if(qp_image != NULL) {
-        qp_drawimage(qp_display, 0, 0, qp_image);    
-    }
-    qp_close_image(qp_image);
-
-    // Draw a border around the display and a diagonal cross
-    qp_line(qp_display, 0, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, PANEL_WIDTH-1, 0, 0, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, 0, 0, PANEL_WIDTH-1, 0, 0, 0, 255);
-    qp_line(qp_display, PANEL_WIDTH-1, 0, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, PANEL_WIDTH-1, PANEL_HEIGHT-1, 0, PANEL_HEIGHT-1, 0, 0, 255);
-    qp_line(qp_display, 0, PANEL_HEIGHT-1, 0, 0, 0, 0, 255);
-
-    if (qp_font != NULL) {        
-        int16_t text_width = qp_textwidth(qp_font, "AK820Pro");
-        qp_drawtext(qp_display, (PANEL_WIDTH - text_width), 96, qp_font, "AK820Pro");
-    }
-
-    qp_flush(qp_display);
+    lv_disp_t  *lv_display = lv_disp_get_default();
+    lv_theme_t *lv_theme   = lv_theme_default_init(lv_display, lv_palette_main(LV_PALETTE_AMBER), lv_palette_main(LV_PALETTE_BLUE), true, LV_FONT_DEFAULT);
+    lv_disp_set_theme(lv_display, lv_theme);
+    
+    init_styles();
 
     bool res = display_init_user();
-    if(res) { // No more display initialization steps, flush the display to ensure everything is drawn
-        // setup default state of the display here if needed
+    if(res) {
+        init_screen_home();
     }
 
     return true;
@@ -79,4 +173,17 @@ bool display_init_kb(void) {
 
 __attribute__((weak)) bool display_init_user(void) {
     return true;
+}
+
+__attribute__((weak)) void display_housekeeping_task(void) {
+    dprint("display_housekeeping_task_kb\n");
+
+    toggle_state(label_shift, LV_STATE_PRESSED, MODS_SHIFT);
+    toggle_state(label_ctrl, LV_STATE_PRESSED, MODS_CTRL);
+    toggle_state(label_alt, LV_STATE_PRESSED, MODS_ALT);
+    toggle_state(label_gui, LV_STATE_PRESSED, MODS_GUI);
+}
+
+__attribute__((weak)) void display_process_caps(bool active) {
+    toggle_state(label_caps, LV_STATE_PRESSED, active);
 }

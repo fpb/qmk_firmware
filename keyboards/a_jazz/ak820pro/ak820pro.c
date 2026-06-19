@@ -43,7 +43,20 @@ static inline void winloock_led_update(void) {
     gpio_write_pin(LED_WINLOCK_PIN, keymap_config.no_gui);
 }
 
+/* Caps Lock processing */
+bool led_update_kb(led_t led_state) {
+    bool res = led_update_user(led_state);
+    if (res) {
+        display_process_caps(led_state.caps_lock);
+        led_update_ports(led_state);
+    }
+
+    return res;
+}
+
 void housekeeping_task_kb(void) {
     charging_led_update();
     winloock_led_update();
+    display_housekeeping_task();
 }
+
