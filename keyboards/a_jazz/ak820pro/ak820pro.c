@@ -11,7 +11,10 @@ void early_hardware_init_pre(void) {
     SN_PFPA->SPI_b.SEL0  = 0b10;
 }
 
-// void keyboard_pre_init_kb(void){
+// void keyboard_pre_init_kb(void) {
+//     gpio_set_pin_output(A16);
+//     gpio_write_pin_high(A16);  // backlight on at boot
+//     keyboard_pre_init_user();
 // }
 
  void keyboard_post_init_kb(void) {
@@ -60,3 +63,14 @@ void housekeeping_task_kb(void) {
     display_housekeeping_task();
 }
 
+void suspend_power_down_kb(void) {
+    // You can add any additional code to turn off the display or put it into low-power mode here if needed
+    display_suspend();
+    suspend_power_down_user();
+}
+
+void suspend_wakeup_init_kb(void) {
+    // You can add any additional code to wake up the display or restore its state here if needed
+    display_wakeup();
+    suspend_wakeup_init_user();
+}

@@ -132,28 +132,22 @@ void init_screen_home(void) {
 
 bool display_backlight_init(void) {
     gpio_set_pin_output(PANEL_BKL);
-    gpio_write_pin_high(PANEL_BKL);
+    gpio_write_pin_high(PANEL_BKL);  // restore this
     return true;
 }
 
 bool display_init_kb(void) {
 
     qp_display = qp_gc9107_make_spi_device(
-        PANEL_WIDTH, 
-        PANEL_HEIGHT, 
-        PANEL_CS, 
-        PANEL_DC, 
-        PANEL_RST, 
-        4, //spi_divisor, 
-        3  //spi_mode
-    );         // Create the display
-    
-    qp_set_viewport_offsets(qp_display, LCD_OFFSET_X, LCD_OFFSET_Y);
-    qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
+        PANEL_WIDTH, PANEL_HEIGHT,
+        PANEL_CS, PANEL_DC, PANEL_RST,
+        4, 3
+    );
 
-    // LCD backlight on
+    qp_set_viewport_offsets(qp_display, LCD_OFFSET_X, LCD_OFFSET_Y);
+    qp_init(qp_display, QP_ROTATION_270);
+
     display_backlight_init();
-    //qp_power(qp_display, true);
 
     qp_lvgl_attach(qp_display);
 
@@ -167,6 +161,9 @@ bool display_init_kb(void) {
     if(res) {
         init_screen_home();
     }
+
+    // gpio_write_pin_low(A16);  // test point 5
+    // wait_ms(2000);
 
     return true;
 }
@@ -186,4 +183,22 @@ __attribute__((weak)) void display_housekeeping_task(void) {
 
 __attribute__((weak)) void display_process_caps(bool active) {
     toggle_state(label_caps, LV_STATE_PRESSED, active);
+}
+
+void display_suspend(void) {
+    qp_lvgl_detach();
+    qp_power(qp_display, false);
+    gpio_set_pin_output(A16);
+    gpio_write_pin_low(A16);
+    // Does it go off here even briefly?
+    wait_ms(500);
+    gpio_write_pin_low(A16);  // write again after 500ms
+}
+
+
+void display_wakeup(void) {
+    gpio_set_pin_output(A16);    // force reclaim again
+    gpio_write_pin_high(A16);
+    qp_power(qp_display, true);
+    qp_lvgl_attach(qp_display);
 }
