@@ -4,7 +4,7 @@
 
 #include "display.h"
 
-void early_hardware_init_pre(void) {
+void early_hardware_init_post(void) {
     SN_PFPA->SPI_b.MISO0 = 0b11; 
     SN_PFPA->SPI_b.MOSI0 = 0b11; 
     SN_PFPA->SPI_b.SCK0  = 0b11; 
