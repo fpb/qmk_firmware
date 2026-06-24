@@ -5,9 +5,9 @@
 #include "display.h"
 
 void early_hardware_init_post(void) {
-    SN_PFPA->SPI_b.MISO0 = 0b11; 
-    SN_PFPA->SPI_b.MOSI0 = 0b11; 
-    SN_PFPA->SPI_b.SCK0  = 0b11; 
+    SN_PFPA->SPI_b.MISO0 = 0b11;
+    SN_PFPA->SPI_b.MOSI0 = 0b11;
+    SN_PFPA->SPI_b.SCK0  = 0b11;
     SN_PFPA->SPI_b.SEL0  = 0b10;
 }
 
@@ -19,9 +19,47 @@ void early_hardware_init_post(void) {
     // Set up GPIO pins for the charging status inputs
     gpio_set_pin_input_high(CHARGE_CHRG_PIN);   // input with pull-up
     gpio_set_pin_input_high(CHARGE_STDBY_PIN);  // input with pull-up
-   
+
     // You can add any additional initialization code for your display here if needed
     display_init_kb();
+ }
+
+ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
+    // Let keymap handle layer logic
+    if(!process_record_user(keycode, record)) {
+        return false;
+    }
+    switch(keycode) {
+        case SCR_TOG:
+            if (record->event.pressed)
+                display_toggle_power();
+            return false;  // Skip all further processing of this key
+        default:
+            return true;
+    }
+    return true;
+ }
+
+ bool dip_switch_update_kb(uint8_t index, bool active) {
+    // Let keymap handle layer logic
+    if(!dip_switch_update_user(index, active)) {
+        return false;
+    }
+
+    // Handle dashboard updates
+    if (index == 0) {  // Mac/Windows switch
+        if (active) display_draw_windows_logo();
+        else        display_draw_mac_logo();
+    }
+    if(index == 1) {    // Bluetooth switch
+        if (active) display_draw_bluetooth_logo();
+        else        display_draw_usb_logo();
+    }
+    if(index == 2) {    // 2.4GHz switch
+        if (active) display_draw_2_4_g_logo();
+        else        display_draw_usb_logo();
+    }
+    return true;
  }
 
 static inline void update_leds(void) {
@@ -45,7 +83,6 @@ __attribute__((weak)) void display_housekeeping_task(void) {}
 void housekeeping_task_kb(void) {
     update_leds();
     display_control_power();
-
     display_housekeeping_task();
 }
 

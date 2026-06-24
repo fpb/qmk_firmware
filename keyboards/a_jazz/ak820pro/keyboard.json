@@ -26,7 +26,8 @@
         "nkro": true,
         "rgb_matrix": false,
          "dip_switch": true,
-         "encoder": true
+         "encoder": true,
+         "deferred_exec": true
     },
     "encoder": {
           "rotary": [{ "pin_a": "B2", "pin_b": "A10", "resolution": 2 }]
@@ -38,7 +39,7 @@
     "processor": "SN32F299F",
     "diode_direction": "COL2ROW",
     "matrix_pins": {
-        "cols": [ "A4", "A5", "C0", "C1", "C2", "C3", "A6", "A7", "C4", "C5", "C6", "C7", "C14", "C8", "C9" ],  
+        "cols": [ "A4", "A5", "C0", "C1", "C2", "C3", "A6", "A7", "C4", "C5", "C6", "C7", "C14", "C8", "C9" ],
         "rows": [ "B14", "B15", "B19",  "D19", "A19", "A18" ]
     }/*,
 
@@ -174,7 +175,7 @@
                 {"matrix": [2, 12], "x": 12.5, "y": 2.25},
                 {"matrix": [2, 13], "x": 13.5, "y": 2.25, "w": 1.5},
                 {"matrix": [2, 14], "x": 15.5, "y": 2.25},
-                
+
                 {"matrix": [3, 0], "x": 0, "y": 3.25, "w": 1.75},
                 {"matrix": [3, 1], "x": 1.75, "y": 3.25},
                 {"matrix": [3, 2], "x": 2.75, "y": 3.25},

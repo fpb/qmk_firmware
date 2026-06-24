@@ -1,5 +1,5 @@
 /* Copyright (C) 2023 Fernando Birra
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
@@ -16,18 +16,13 @@
 
 #include QMK_KEYBOARD_H
 
-#include "display.h"
+#include "ak820pro.h"
 
 enum layer_names {
     WINBASE,
     WINFN,
     MACBASE,
     MACFN
-};
-
-enum custom_keycodes {
-    WIN_LOCK = SAFE_RANGE,
-    SCR_TOG
 };
 
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
@@ -79,7 +74,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                 _______,    _______,
-        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    
+        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,
         _______,    GU_TOGG,    _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
     ),
     /* Mac Base
@@ -125,20 +120,19 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                 _______,    _______,
-        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    
+        _______,                _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,
         _______,    _______,    _______,                                        _______,                            _______,    _______,    _______,     _______,    _______,    _______
     )
 };
 
 
-//bool win_lock_active = false;
 
 bool dip_switch_update_user(uint8_t index, bool active) {
     if (index == 0) {
         if (active) {
-            set_single_persistent_default_layer(WINBASE);
+            set_single_default_layer(WINBASE);
         } else {
-            set_single_persistent_default_layer(MACBASE);
+            set_single_default_layer(MACBASE);
             keymap_config.no_gui = false;
         }
     }
@@ -175,11 +169,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 host_consumer_send(0x2A0);
             } else {
                 host_consumer_send(0);
-            }
-            return false;  // Skip all further processing of this key
-        case SCR_TOG:
-            if (record->event.pressed) {
-                display_toggle_power();
             }
             return false;  // Skip all further processing of this key
         default:
