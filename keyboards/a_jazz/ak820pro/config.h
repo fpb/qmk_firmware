@@ -29,6 +29,16 @@
 #define SPI_MISO_PIN    NO_PIN
 #define SPI_SS_PIN      B8
 
+#define CH582_SERIAL_DRIVER SD2
+
+/* NO_USB_STARTUP_CHECK is enabled automatically by BLUETOOTH_ENABLE (custom
+ * driver); it keeps the main loop (matrix scan + key processing) running when
+ * USB is suspended/unplugged so wireless typing works on battery. */
+
+/* The mode slider drives the connection host explicitly (dip_switch_update_user),
+ * but define a sane boot default before the first slider callback fires. */
+#define CONNECTION_HOST_DEFAULT CONNECTION_HOST_USB
+
 #define LED_WINLOCK_PIN     C15
 #define LED_CHARGING_PIN    B18
 

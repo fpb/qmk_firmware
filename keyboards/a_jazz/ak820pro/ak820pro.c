@@ -9,6 +9,10 @@ void early_hardware_init_post(void) {
     SN_PFPA->SPI_b.MOSI0 = 0b11;
     SN_PFPA->SPI_b.SCK0  = 0b11;
     SN_PFPA->SPI_b.SEL0  = 0b10;
+
+    // Configure UART2 pins for the CH582F wireless module
+    SN_PFPA->UART_b.UTXD2 = 0b11;
+    SN_PFPA->UART_b.URXD2 = 0b11;
 }
 
  void keyboard_post_init_kb(void) {
@@ -22,31 +26,19 @@ void early_hardware_init_post(void) {
 
     // You can add any additional initialization code for your display here if needed
     display_init_kb();
- }
 
- bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
-    // Let keymap handle layer logic
-    if(!process_record_user(keycode, record)) {
-        return false;
-    }
-    switch(keycode) {
-        case SCR_TOG:
-            if (record->event.pressed)
-                display_toggle_power();
-            return false;  // Skip all further processing of this key
-        default:
-            return true;
-    }
-    return true;
+    // Chain the user hook: overriding keyboard_post_init_kb() replaces QMK's
+    // default, which is what normally calls keyboard_post_init_user().
+    keyboard_post_init_user();
  }
 
  bool dip_switch_update_kb(uint8_t index, bool active) {
-    // Let keymap handle layer logic
+    // Let keymap handle layer / connection logic first
     if(!dip_switch_update_user(index, active)) {
         return false;
     }
 
-    // Handle dashboard updates
+    // Handle dashboard icon updates
     if (index == 0) {  // Mac/Windows switch
         if (active) display_draw_windows_logo();
         else        display_draw_mac_logo();
@@ -83,6 +75,11 @@ __attribute__((weak)) void display_housekeeping_task(void) {}
 void housekeeping_task_kb(void) {
     update_leds();
     display_control_power();
-    display_housekeeping_task();
-}
 
+    display_housekeeping_task();
+
+    // Chain the user hook: QMK's default housekeeping_task_kb() calls
+    // housekeeping_task_user(), but overriding this function replaces that
+    // default.
+    housekeeping_task_user();
+}
