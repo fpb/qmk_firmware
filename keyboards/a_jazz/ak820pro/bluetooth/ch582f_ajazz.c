@@ -366,10 +366,14 @@ void ch582_task(void) {
             debug_last_rx_data = d;
             switch (type) {
                 case 0x5A: /* host LED bitmap (caps lock = bit1) */
-                    /* Only honor LED frames once a link exists. The boot power-up
-                     * burst can coincidentally satisfy the weak 1-byte checksum
-                     * for a bogus 5A frame, spuriously lighting Caps at boot. */
-                    if (is_module_connected) host_leds = d;
+                    /* The 1-byte additive checksum is weak, so the mixed RX stream
+                     * (notably the CH582F power-up / 2.4G link-up burst) can throw a
+                     * bogus 5A frame that spuriously lights Caps. Guard twofold:
+                     *   - only honor LED frames once a link exists, and
+                     *   - require a plausible HID LED bitmap (low 5 bits only:
+                     *     num/caps/scroll/compose/kana). Random garbage that happens
+                     *     to pass the checksum usually has high bits set. */
+                    if (is_module_connected && (d & ~0x1F) == 0) host_leds = d;
                     break;
                 case 0x5B: /* connection state code (NOT a slot number) */
                     switch (d) {
