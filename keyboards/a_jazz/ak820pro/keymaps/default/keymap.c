@@ -16,10 +16,7 @@
 
 #include QMK_KEYBOARD_H
 
-#include "display.h"
-
-#include "ch582f_ajazz.h"
-#include "connection.h"
+#include "ak820pro.h"
 
 enum layer_names {
     WINBASE,
@@ -28,15 +25,8 @@ enum layer_names {
     MACFN
 };
 
-enum custom_keycodes {
-    WIN_LOCK = SAFE_RANGE,
-    SCR_TOG,
-    BT1,       // Fn+Q: select BT slot 1
-    BT2,       // Fn+W: select BT slot 2
-    BT3,       // Fn+E: select BT slot 3
-    BT24G,     // Fn+R: select 2.4G
-    BT_PAIR    // Fn+P: enter pairing on the currently-selected slot
-};
+/* SCR_TOG and the BT* keycodes are keyboard-level (defined in ak820pro.h) and
+ * handled in ak820pro.c; the keymap only references them in the layouts. */
 
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
 #define KC_FLXP LGUI(KC_E)          // Windows file explorer
@@ -139,30 +129,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 };
 
 
-//bool win_lock_active = false;
-
-/* BT controls:
- *   - Fn+Q/W/E select BT slots 1/2/3 (A6 3x).
- *   - Fn+R selects 2.4G.
- *   - Fn+P enters pairing on the currently-selected slot (A6 51). */
-
-// Current wireless mode, derived from the tri-state slider. The Fn BT controls
-// are only meaningful in the matching mode (e.g. Fn+Q selects a BT slot only
-// while the slider is in the BT position), so they are gated on this.
-enum wireless_mode {
-    WL_MODE_USB = 0,
-    WL_MODE_BT,
-    WL_MODE_24G
-};
-static uint8_t wireless_mode = WL_MODE_USB;
-
-// Fn+P long-press tracking: pairing only starts after a sustained hold, and
-// only while in a wireless mode.
-#define BT_PAIR_HOLD_MS 1000
-static uint16_t bt_pair_timer = 0;
-static bool     bt_pair_armed = false;
-
 bool dip_switch_update_user(uint8_t index, bool active) {
+    // Mac/Windows layer switch. The wireless slider (index 1/2) and dashboard
+    // icons are handled at keyboard level in ak820pro.c (dip_switch_update_kb).
     if (index == 0) {
         if (active) {
             set_single_persistent_default_layer(WINBASE);
@@ -171,48 +140,13 @@ bool dip_switch_update_user(uint8_t index, bool active) {
             keymap_config.no_gui = false;
         }
     }
-    // The mode slider is a tri-state encoded by two dip pins: index 1 = BT,
-    // index 2 = 2.4G, both inactive = USB. We must look at BOTH pins together --
-    // handling them independently lets the inactive sibling's "else" branch call
-    // ch582_cancel_connect() and clobber connect_requested even while the other
-    // mode is active (e.g. at boot in BT position), which silently disables
-    // wireless key forwarding. Recompute the mode from the latched pin states.
-    if (index == 1 || index == 2) {
-        static bool bt_on  = false;
-        static bool g24_on = false;
-        if (index == 1) bt_on = active;
-        if (index == 2) g24_on = active;
-
-        // The CH582F handles both BT and 2.4G over the same UART, and QMK's
-        // CONNECTION_HOST_2P4GHZ is not wired, so BOTH wireless positions map to
-        // CONNECTION_HOST_BLUETOOTH (QMK then routes key reports to bt_driver ->
-        // our bluetooth_send_keyboard). Our own A6 profile-select tells the
-        // module which radio to use.
-        if (bt_on) {
-            // Bluetooth mode: default to slot 1.
-            wireless_mode = WL_MODE_BT;
-            ch582_set_profile(CH582_PROFILE_BT_1);
-            connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-        } else if (g24_on) {
-            // 2.4GHz mode: select the 2.4G channel ('0').
-            wireless_mode = WL_MODE_24G;
-            ch582_set_profile(CH582_PROFILE_PEER_24G);
-            connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-        } else {
-            // USB mode (both inactive): stop retrying, but keep the module alive
-            // (it must stay powered to keep reporting battery level). Route key
-            // reports back to USB.
-            wireless_mode = WL_MODE_USB;
-            ch582_cancel_connect();
-            connection_set_host_noeeprom(CONNECTION_HOST_USB);
-        }
-    }
     return true;
 }
 
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-
+    // Only Mac-specific media keys live here; SCR_TOG and the BT* keycodes are
+    // handled at keyboard level in ak820pro.c (process_record_kb).
     switch (keycode) {
         case KC_MISSION_CONTROL:
             if (record->event.pressed) {
@@ -228,51 +162,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 host_consumer_send(0);
             }
             return false;  // Skip all further processing of this key
-        case SCR_TOG:
-            if (record->event.pressed) {
-                display_toggle_power();
-            }
-            return false;  // Skip all further processing of this key
-        case BT1:  // Fn+Q -> select BT slot 1 (BT mode only)
-            if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                ch582_set_profile(CH582_PROFILE_BT_1);
-                connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-                display_draw_bluetooth_logo();
-            }
-            return false;
-        case BT2:  // Fn+W -> select BT slot 2 (BT mode only)
-            if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                ch582_set_profile(CH582_PROFILE_BT_2);
-                connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-                display_draw_bluetooth_logo();
-            }
-            return false;
-        case BT3:  // Fn+E -> select BT slot 3 (BT mode only)
-            if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                ch582_set_profile(CH582_PROFILE_BT_3);
-                connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-                display_draw_bluetooth_logo();
-            }
-            return false;
-        case BT24G:  // Fn+R -> select 2.4G (2.4G mode only)
-            if (record->event.pressed && wireless_mode == WL_MODE_24G) {
-                ch582_set_profile(CH582_PROFILE_PEER_24G);
-                connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-                display_draw_2_4_g_logo();
-            }
-            return false;
-        case BT_PAIR:  // Fn+P (long press) -> pair, BT/2.4G modes only
-            if (record->event.pressed) {
-                // Arm a long-press only in a wireless mode; ignore in USB.
-                bt_pair_armed = (wireless_mode != WL_MODE_USB);
-                bt_pair_timer = timer_read();
-            } else if (bt_pair_armed) {
-                bt_pair_armed = false;
-                if (timer_elapsed(bt_pair_timer) >= BT_PAIR_HOLD_MS) {
-                    ch582_enter_pairing();
-                }
-            }
-            return false;
         default:
             return true;  // Process all other keycodes normally
     }
