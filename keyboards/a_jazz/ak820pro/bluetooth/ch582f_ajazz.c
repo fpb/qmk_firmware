@@ -366,7 +366,10 @@ void ch582_task(void) {
             debug_last_rx_data = d;
             switch (type) {
                 case 0x5A: /* host LED bitmap (caps lock = bit1) */
-                    host_leds = d;
+                    /* Only honor LED frames once a link exists. The boot power-up
+                     * burst can coincidentally satisfy the weak 1-byte checksum
+                     * for a bogus 5A frame, spuriously lighting Caps at boot. */
+                    if (is_module_connected) host_leds = d;
                     break;
                 case 0x5B: /* connection state code (NOT a slot number) */
                     switch (d) {
@@ -379,12 +382,14 @@ void ch582_task(void) {
                             is_pairing          = true;
                             is_module_connected = false;
                             connected_slot      = 0;
+                            host_leds           = 0; /* no link -> drop stale LED state */
                             break;
                         case 0x33: /* connect ATTEMPT - link is down and retrying */
                         case 0x34:
                             is_module_connected = false;
                             is_pairing          = false;
                             connected_slot      = 0;
+                            host_leds           = 0; /* no link -> drop stale LED state */
                             break;
                         default:   /* 0x23 idle/finalize: periodic, appears both
                                     * connected and disconnected -> leave state */
