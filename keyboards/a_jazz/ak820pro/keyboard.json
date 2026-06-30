@@ -27,7 +27,8 @@
         "rgb_matrix": false,
          "dip_switch": true,
          "encoder": true,
-         "deferred_exec": true
+         "deferred_exec": true,
+         "raw": true
     },
     "encoder": {
           "rotary": [{ "pin_a": "B2", "pin_b": "A10", "resolution": 2 }]

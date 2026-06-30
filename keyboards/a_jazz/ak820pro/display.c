@@ -146,6 +146,16 @@ static void clock_current(rtc_time_t *out) {
 
 bool clock_edit_active(void) { return edit_active; }
 
+// Write-through: re-seed the live software clock from t (e.g. after a host sets
+// the RTC over raw HID), so the display jumps to the new time without a reboot.
+void clock_set(const rtc_time_t *t) {
+    base              = *t;
+    base_tick         = timer_read32();
+    have_base         = true;
+    last_drawn_second = 60;   // force the time/date to repaint at the new value
+    date_drawn        = false;
+}
+
 // Fn+Knob press: enter edit mode (on the day field), advance to the next field,
 // or -- after the last field -- commit the working copy to base + RTC and exit.
 void clock_edit_step(void) {
@@ -158,12 +168,8 @@ void clock_edit_step(void) {
         edit_field  = EF_DAY;
     } else if (++edit_field == EF_COUNT) {
         edit_active = false;
-        base        = edit_time;
-        base_tick   = timer_read32();
-        have_base   = true;
         rtc_set_time(&edit_time); // single write, clears VL
-        last_drawn_second = 60;   // force a clean repaint of the live clock
-        date_drawn        = false;
+        clock_set(&edit_time);    // write-through to the live software clock
     }
 }
 

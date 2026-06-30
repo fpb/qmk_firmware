@@ -1,4 +1,5 @@
 #include "qp.h"
+#include "rtc.h"
 
 bool display_init_kb(void);
 bool display_init_user(void);
@@ -14,6 +15,7 @@ void display_control_power(void);
 void clock_edit_step(void);          // enter / next field / commit + exit
 void clock_edit_adjust(int8_t dir);  // +1 / -1 the selected field
 bool clock_edit_active(void);
+void clock_set(const rtc_time_t *t); // write-through: re-seed the live clock
 
 void display_draw_mac_logo(void);
 void display_draw_windows_logo(void);
