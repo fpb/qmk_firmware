@@ -9,6 +9,16 @@
 
 #define TX_MAX_PAYLOAD 16
 
+/* Mirror the stock firmware's ACK behaviour: after receiving a 5B (connection
+ * state) or 5C (battery) frame, the stock MCU replies with the 61 0D 0A ("a\r\n")
+ * ACK token ~1.3 ms later. It does NOT ack 5A (LED) frames. Logic-analyzer-
+ * confirmed against a stock BT boot. Experimental: enable to test whether a
+ * "well-behaved" peer yields cleaner cold-boot connects or new frame types.
+ * Define CH582_ACK_FRAMES=0 in config.h to disable. */
+#ifndef CH582_ACK_FRAMES
+#    define CH582_ACK_FRAMES 1
+#endif
+
 /* How often to re-issue the channel-select command while a connection is
  * requested but not yet established. At cold boot the dip-switch callback fires
  * a one-shot 0xA6 microseconds after sdStart(), before the CH582F has finished
@@ -193,6 +203,15 @@ void ch582_send_command(uint8_t cmd, const uint8_t *params, uint8_t param_len) {
     sdWrite(&CH582_SERIAL_DRIVER, tx_packet, total_len);
     debug_tx_packet_count++;
 }
+
+#if CH582_ACK_FRAMES
+/* Raw 61 0D 0A ACK token (not a checksummed command, so it bypasses
+ * ch582_send_command). Stock replies with this to 5B/5C frames. */
+static void ch582_send_ack(void) {
+    static const uint8_t ack[3] = {0x61, 0x0D, 0x0A};
+    sdWrite(&CH582_SERIAL_DRIVER, ack, sizeof(ack));
+}
+#endif
 
 void ch582_set_profile(ch582_profile_t profile) {
     uint8_t param       = (uint8_t)profile;
@@ -405,6 +424,10 @@ void ch582_task(void) {
                     if (d <= 100) battery_level = d;
                     break;
             }
+#if CH582_ACK_FRAMES
+            /* Mirror stock: ack 5B (connection state) and 5C (battery), never 5A. */
+            if (type == 0x5B || type == 0x5C) ch582_send_ack();
+#endif
             matched = true;
         }
 
