@@ -6,6 +6,7 @@
 #include "ch582f_ajazz.h"
 #include "connection.h"
 #include "rtc.h"
+#include "raw_hid.h"
 
 // Current wireless mode, derived from the tri-state slider. The Fn BT controls
 // are only meaningful in the matching mode (e.g. Fn+Q selects a BT slot only
@@ -156,6 +157,35 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         default:
             return true;
     }
+}
+
+// Raw HID: host -> keyboard command channel (used by util/set-clock to set the
+// RTC). Report layout (32 bytes, no report ID on the wire):
+//   [0]=command, then for 0x01 (set time):
+//   [1]=year-2000 [2]=month [3]=day [4]=weekday [5]=hour [6]=min [7]=sec
+// We reply in-place: [1] becomes a status byte (0x00 OK, 0xFF write failed,
+// 0xFE unknown command) and echo the buffer back.
+void raw_hid_receive(uint8_t *data, uint8_t length) {
+    if (length >= 8 && data[0] == 0x01) {
+        rtc_time_t t = {
+            .seconds = data[7],
+            .minutes = data[6],
+            .hours   = data[5],
+            .day     = data[3],
+            .weekday = data[4],
+            .month   = data[2],
+            .year    = (uint16_t)(2000 + data[1]),
+        };
+        if (rtc_set_time(&t)) {   // single write to the chip, clears VL
+            clock_set(&t);        // write-through: live clock updates, no reboot
+            data[1] = 0x00;
+        } else {
+            data[1] = 0xFF;
+        }
+    } else {
+        data[1] = 0xFE;
+    }
+    raw_hid_send(data, length);
 }
 
 static inline void update_leds(void) {

@@ -75,77 +75,120 @@ static bool display_backlight_init(void) {
     return true;
 }
 
-// Keep track of the last second drawn to prevent screen spam
-static uint8_t last_drawn_second = 60; // Start at 60 to force an immediate draw on boot
+// y position of the big HH:MM:SS clock (top of the glyphs).
+#define CLOCK_Y 49
 
-// Date (DD/MM) captured from the boot RTC seed, drawn top-right. Static for the
-// session since we don't resync; reset date_drawn on a full dashboard redraw so
-// it gets repainted after the screen is cleared.
-static uint8_t base_day   = 0;
-static uint8_t base_month = 0;
-static bool    date_drawn = false;
+// Force-redraw markers; reset on a full dashboard repaint and on a clock_set.
+static uint8_t last_drawn_second = 60; // 60 forces an immediate draw
+static bool    date_drawn        = false;
+
+// The software clock: a full date+time captured at base_tick, advanced purely
+// by the MCU timer (no periodic RTC resync -- bit-banged I2C would add keystroke
+// latency). base rolls forward across midnight so the date stays correct.
+static bool       have_base = false;
+static rtc_time_t base;            // date+time as of base_tick
+static uint32_t   base_tick = 0;   // timer_read32() captured at the seed/commit
+static uint32_t   last_try  = 0;   // throttles the boot seed retries
+
+// --- Date arithmetic (for midnight rollover). -------------------------------
+static uint8_t days_in_month(uint8_t month, uint16_t year) {
+    static const uint8_t dim[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    if (month < 1 || month > 12) return 31;
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) return 29;
+    return dim[month - 1];
+}
+
+static void date_add_days(rtc_time_t *t, uint32_t days) {
+    while (days--) {
+        if (++t->day > days_in_month(t->month, t->year)) {
+            t->day = 1;
+            if (++t->month > 12) { t->month = 1; t->year++; }
+        }
+        if (++t->weekday > 6) t->weekday = 0;
+    }
+}
+
+// Compute the current displayed time, advancing base across midnight in place.
+static void clock_current(rtc_time_t *out) {
+    uint32_t now = timer_read32();
+    if (!have_base) {
+        uint32_t s = now / 1000; // uptime fallback until the first good read
+        out->seconds = s % 60;
+        out->minutes = (s / 60) % 60;
+        out->hours   = (s / 3600) % 24;
+        out->day = out->month = out->weekday = 0;
+        out->year = 0;
+        return;
+    }
+    uint32_t sod = (uint32_t)base.hours * 3600 + base.minutes * 60 + base.seconds
+                 + (now - base_tick) / 1000;
+    if (sod >= 86400) { // crossed one or more midnights: roll the date forward
+        uint32_t days = sod / 86400;
+        date_add_days(&base, days);
+        base_tick += days * 86400000UL;
+        sod %= 86400;
+        base.hours   = (uint8_t)(sod / 3600);
+        base.minutes = (uint8_t)((sod / 60) % 60);
+        base.seconds = (uint8_t)(sod % 60);
+    }
+    *out = base;
+    out->hours   = (uint8_t)(sod / 3600);
+    out->minutes = (uint8_t)((sod / 60) % 60);
+    out->seconds = (uint8_t)(sod % 60);
+}
+
+// Write-through: re-seed the live software clock from t (e.g. after a host sets
+// the RTC over raw HID), so the display jumps to the new time without a reboot.
+void clock_set(const rtc_time_t *t) {
+    base              = *t;
+    base_tick         = timer_read32();
+    have_base         = true;
+    last_drawn_second = 60;   // force the time/date to repaint at the new value
+    date_drawn        = false;
+}
 
 void draw_clock(void) {
-    uint8_t hours, minutes, seconds;
-
-    // Seed the clock from the external PCF8563 RTC ONCE at boot, then free-run
-    // purely on the MCU timer -- no periodic resync. Bit-banged I2C blocks the
-    // main loop (and would add keystroke latency), so after one good read we
-    // never touch the bus again. Until that first read succeeds we retry at most
-    // once a second (not every housekeeping pass) and show uptime meanwhile.
-    static bool     have_base    = false;
-    static uint32_t base_seconds = 0;  // RTC time-of-day (seconds) at the seed
-    static uint32_t base_tick    = 0;  // timer_read32() captured at the seed
-    static uint32_t last_try     = 0;
-
     uint32_t now = timer_read32();
-    if (!have_base && (last_try == 0 || timer_elapsed32(last_try) >= 1000)) {
+
+    // Seed the clock from the external PCF8563 RTC ONCE at boot, then free-run on
+    // the MCU timer. After one good read we never touch the bus again; until then
+    // retry at most once a second (not every housekeeping pass), showing uptime.
+    if (!have_base &&
+        (last_try == 0 || timer_elapsed32(last_try) >= 1000)) {
         last_try = now ? now : 1; // avoid the "0 == never tried" sentinel
         rtc_time_t t;
-        // Use the raw read and accept whatever the chip returns: this RTC has
-        // its VL (clock-integrity) flag set because it was never properly set,
-        // yet it keeps running time -- exactly what the stock firmware displays.
-        // Don't reject anything; just seed from the first read the bus ACKs.
+        // Accept whatever the chip returns (its VL flag is set since it was never
+        // properly set, yet it keeps running time -- like the stock firmware).
         if (rtc_read_raw(&t)) {
-            base_seconds = (uint32_t)t.hours * 3600 + (uint32_t)t.minutes * 60 + t.seconds;
-            base_tick    = now;
-            have_base    = true;
-            base_day     = t.day;
-            base_month   = t.month;
+            base      = t;
+            base_tick = now;
+            have_base = true;
         }
     }
 
-    // RTC base advanced by elapsed MCU time, or plain uptime until the first
-    // good read.
-    uint32_t total_seconds = have_base ? base_seconds + (now - base_tick) / 1000
-                                       : now / 1000;
-    hours   = (total_seconds / 3600) % 24;
-    minutes = (total_seconds / 60) % 60;
-    seconds = total_seconds % 60;
+    rtc_time_t shown;
+    clock_current(&shown);
 
-    // Only update the screen if the second has actually changed
-    if (seconds != last_drawn_second) {
-        last_drawn_second = seconds;
-
-        // Format the string. Raw RTC fields are <100 (BCD-decoded), but size
-        // generously so any out-of-range debug value still fits without
-        // tripping -Wformat-truncation.
+    // Time HH:MM:SS, centred -- only when the second changes, to spare the SPI.
+    if (shown.seconds != last_drawn_second) {
+        last_drawn_second = shown.seconds;
         char time_str[16];
         snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
-                 (unsigned)hours, (unsigned)minutes, (unsigned)seconds);
-
-        // Draw the new time text
-        // (display, x, y, font, text)
-        qp_drawtext(qp_display, (PANEL_WIDTH - qp_textwidth(qp_font, time_str))/2, 49, qp_font, time_str);
+                 (unsigned)shown.hours, (unsigned)shown.minutes, (unsigned)shown.seconds);
+        qp_drawtext(qp_display, (PANEL_WIDTH - qp_textwidth(qp_font, time_str)) / 2,
+                    CLOCK_Y, qp_font, time_str);
     }
 
-    // Date (DD/MM), top-right. Drawn once per dashboard paint (it doesn't change
-    // mid-session), right-aligned clear of the top-row icons.
-    if (have_base && !date_drawn) {
-        date_drawn = true;
+    // Date DD/MM, top-right. Repainted once per dashboard paint (date changes
+    // only at midnight, where date_drawn is cleared to trigger a redraw).
+    static uint8_t drawn_day = 0, drawn_month = 0;
+    if (have_base && (!date_drawn || shown.day != drawn_day || shown.month != drawn_month)) {
+        date_drawn  = true;
+        drawn_day   = shown.day;
+        drawn_month = shown.month;
         char date_str[8];
         snprintf(date_str, sizeof(date_str), "%02u/%02u",
-                 (unsigned)base_day, (unsigned)base_month);
+                 (unsigned)shown.day, (unsigned)shown.month);
         int16_t w = qp_textwidth(qp_status_font, date_str);
         qp_drawtext(qp_display, PANEL_WIDTH - 1 - w, 2, qp_status_font, date_str);
     }
