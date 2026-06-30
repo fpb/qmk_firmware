@@ -5,6 +5,7 @@
 #include "display.h"
 #include "ch582f_ajazz.h"
 #include "connection.h"
+#include "rtc.h"
 
 // Current wireless mode, derived from the tri-state slider. The Fn BT controls
 // are only meaningful in the matching mode (e.g. Fn+Q selects a BT slot only
@@ -41,6 +42,9 @@ void early_hardware_init_post(void) {
     // Set up GPIO pins for the charging status inputs
     gpio_set_pin_input_high(CHARGE_CHRG_PIN);   // input with pull-up
     gpio_set_pin_input_high(CHARGE_STDBY_PIN);  // input with pull-up
+
+    // Bring the bit-banged I2C lines to idle before the first RTC read.
+    rtc_init();
 
     // You can add any additional initialization code for your display here if needed
     display_init_kb();

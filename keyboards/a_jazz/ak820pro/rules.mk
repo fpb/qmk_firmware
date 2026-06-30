@@ -21,5 +21,6 @@ SRC += graphics/bluetooth_icon_24x24.qgf.c
 SRC += graphics/2_4_g_icon_24x24.qgf.c
 
 SRC += display.c
+SRC += rtc.c
 SRC += bluetooth/ch582f_ajazz.c
 VPATH += $(KEYBOARD_PATH_1)/bluetooth
