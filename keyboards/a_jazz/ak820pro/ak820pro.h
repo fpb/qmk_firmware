@@ -12,5 +12,6 @@ enum ak820pro_keycodes {
     BT3,                   // Fn+E: BT slot 3 (BT mode)
     BT24G,                 // Fn+R: 2.4G       (2.4G mode)
     BT_PAIR,               // Fn+P long-press: pair (BT/2.4G)
+    CLK_SET,               // Fn+Knob press: enter/step clock set mode
     AK820PRO_SAFE_RANGE
 };

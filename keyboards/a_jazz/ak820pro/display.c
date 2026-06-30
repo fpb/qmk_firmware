@@ -75,77 +75,214 @@ static bool display_backlight_init(void) {
     return true;
 }
 
-// Keep track of the last second drawn to prevent screen spam
-static uint8_t last_drawn_second = 60; // Start at 60 to force an immediate draw on boot
+// y position of the big HH:MM:SS clock (top of the glyphs).
+#define CLOCK_Y 49
 
-// Date (DD/MM) captured from the boot RTC seed, drawn top-right. Static for the
-// session since we don't resync; reset date_drawn on a full dashboard redraw so
-// it gets repainted after the screen is cleared.
-static uint8_t base_day   = 0;
-static uint8_t base_month = 0;
-static bool    date_drawn = false;
+// Force-redraw markers; reset on a full dashboard repaint and when leaving edit.
+static uint8_t last_drawn_second = 60; // 60 forces an immediate draw
+static bool    date_drawn        = false;
+
+// The software clock: a full date+time captured at base_tick, advanced purely
+// by the MCU timer (no periodic RTC resync -- bit-banged I2C would add keystroke
+// latency). base rolls forward across midnight so the date stays correct.
+static bool       have_base = false;
+static rtc_time_t base;            // date+time as of base_tick
+static uint32_t   base_tick = 0;   // timer_read32() captured at the seed/commit
+static uint32_t   last_try  = 0;   // throttles the boot seed retries
+
+// --- Date arithmetic (for midnight rollover and field editing). -------------
+static uint8_t days_in_month(uint8_t month, uint16_t year) {
+    static const uint8_t dim[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    if (month < 1 || month > 12) return 31;
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) return 29;
+    return dim[month - 1];
+}
+
+static void date_add_days(rtc_time_t *t, uint32_t days) {
+    while (days--) {
+        if (++t->day > days_in_month(t->month, t->year)) {
+            t->day = 1;
+            if (++t->month > 12) { t->month = 1; t->year++; }
+        }
+        if (++t->weekday > 6) t->weekday = 0;
+    }
+}
+
+// --- Clock edit mode: Fn+Knob steps through fields, knob rotation adjusts the
+//     selected one; the RTC is written only when the last field is committed. --
+typedef enum { EF_DAY, EF_MONTH, EF_HOUR, EF_MIN, EF_SEC, EF_COUNT } edit_field_t;
+static bool         edit_active = false;
+static edit_field_t edit_field;
+static rtc_time_t   edit_time; // working copy, not written until commit
+
+// Compute the current displayed time, advancing base across midnight in place.
+static void clock_current(rtc_time_t *out) {
+    uint32_t now = timer_read32();
+    if (!have_base) {
+        uint32_t s = now / 1000; // uptime fallback until the first good read
+        out->seconds = s % 60;
+        out->minutes = (s / 60) % 60;
+        out->hours   = (s / 3600) % 24;
+        out->day = out->month = out->weekday = 0;
+        out->year = 0;
+        return;
+    }
+    uint32_t sod = (uint32_t)base.hours * 3600 + base.minutes * 60 + base.seconds
+                 + (now - base_tick) / 1000;
+    if (sod >= 86400) { // crossed one or more midnights: roll the date forward
+        uint32_t days = sod / 86400;
+        date_add_days(&base, days);
+        base_tick += days * 86400000UL;
+        sod %= 86400;
+        base.hours   = (uint8_t)(sod / 3600);
+        base.minutes = (uint8_t)((sod / 60) % 60);
+        base.seconds = (uint8_t)(sod % 60);
+    }
+    *out = base;
+    out->hours   = (uint8_t)(sod / 3600);
+    out->minutes = (uint8_t)((sod / 60) % 60);
+    out->seconds = (uint8_t)(sod % 60);
+}
+
+bool clock_edit_active(void) { return edit_active; }
+
+// Fn+Knob press: enter edit mode (on the day field), advance to the next field,
+// or -- after the last field -- commit the working copy to base + RTC and exit.
+void clock_edit_step(void) {
+    if (!edit_active) {
+        clock_current(&edit_time);
+        if (edit_time.day == 0)   edit_time.day = 1;     // sane defaults if the
+        if (edit_time.month == 0) edit_time.month = 1;   // RTC never seeded
+        if (edit_time.year == 0)  edit_time.year = 2025;
+        edit_active = true;
+        edit_field  = EF_DAY;
+    } else if (++edit_field == EF_COUNT) {
+        edit_active = false;
+        base        = edit_time;
+        base_tick   = timer_read32();
+        have_base   = true;
+        rtc_set_time(&edit_time); // single write, clears VL
+        last_drawn_second = 60;   // force a clean repaint of the live clock
+        date_drawn        = false;
+    }
+}
+
+// Knob rotation while editing: +/- the selected field, with wrap and day clamp.
+void clock_edit_adjust(int8_t dir) {
+    if (!edit_active) return;
+    switch (edit_field) {
+        case EF_DAY: {
+            uint8_t dim = days_in_month(edit_time.month, edit_time.year);
+            edit_time.day = (uint8_t)((edit_time.day - 1 + dir + dim) % dim) + 1;
+            break;
+        }
+        case EF_MONTH: {
+            edit_time.month = (uint8_t)((edit_time.month - 1 + dir + 12) % 12) + 1;
+            uint8_t dim = days_in_month(edit_time.month, edit_time.year);
+            if (edit_time.day > dim) edit_time.day = dim;
+            break;
+        }
+        case EF_HOUR:
+            edit_time.hours = (uint8_t)((edit_time.hours + dir + 24) % 24);
+            break;
+        case EF_MIN:
+            edit_time.minutes = (uint8_t)((edit_time.minutes + dir + 60) % 60);
+            break;
+        case EF_SEC:
+            edit_time.seconds = (uint8_t)((edit_time.seconds + dir + 60) % 60);
+            break;
+        default:
+            break;
+    }
+}
+
+// Draw one field, blanking it (to the green background) when it is the active
+// edit field on a blink-off phase -- gives a flicker-free selection cue.
+static void draw_field(uint16_t x, uint16_t y, painter_font_handle_t font,
+                       const char *txt, bool hide) {
+    if (hide) {
+        qp_rect(qp_display, x, y, x + qp_textwidth(font, txt), y + font->line_height,
+                0, 255, 0, true);
+    } else {
+        qp_drawtext(qp_display, x, y, font, txt);
+    }
+}
+
+// Render the editable date (top-right) and time (centre) field-by-field, so the
+// active field can blink without disturbing the others.
+static void draw_edit(void) {
+    bool off = (timer_read32() / 400) & 1; // ~1.25 Hz blink of the active field
+
+    char d2[4], mo2[4], hh[4], mm[4], ss[4];
+    snprintf(d2,  sizeof(d2),  "%02u", (unsigned)edit_time.day);
+    snprintf(mo2, sizeof(mo2), "%02u", (unsigned)edit_time.month);
+    snprintf(hh,  sizeof(hh),  "%02u", (unsigned)edit_time.hours);
+    snprintf(mm,  sizeof(mm),  "%02u", (unsigned)edit_time.minutes);
+    snprintf(ss,  sizeof(ss),  "%02u", (unsigned)edit_time.seconds);
+
+    // Date DD/MM, small font, top-right.
+    int16_t dw  = qp_textwidth(qp_status_font, "00");
+    int16_t slw = qp_textwidth(qp_status_font, "/");
+    int16_t dx  = PANEL_WIDTH - 1 - (2 * dw + slw);
+    draw_field(dx, 2, qp_status_font, d2, edit_field == EF_DAY && off);
+    qp_drawtext(qp_display, dx + dw, 2, qp_status_font, "/");
+    draw_field(dx + dw + slw, 2, qp_status_font, mo2, edit_field == EF_MONTH && off);
+
+    // Time HH:MM:SS, big font, centred.
+    int16_t cw = qp_textwidth(qp_font, "00");
+    int16_t co = qp_textwidth(qp_font, ":");
+    int16_t tx = (PANEL_WIDTH - qp_textwidth(qp_font, "00:00:00")) / 2;
+    draw_field(tx, CLOCK_Y, qp_font, hh, edit_field == EF_HOUR && off);
+    qp_drawtext(qp_display, tx + cw, CLOCK_Y, qp_font, ":");
+    draw_field(tx + cw + co, CLOCK_Y, qp_font, mm, edit_field == EF_MIN && off);
+    qp_drawtext(qp_display, tx + 2 * cw + co, CLOCK_Y, qp_font, ":");
+    draw_field(tx + 2 * cw + 2 * co, CLOCK_Y, qp_font, ss, edit_field == EF_SEC && off);
+}
 
 void draw_clock(void) {
-    uint8_t hours, minutes, seconds;
-
-    // Seed the clock from the external PCF8563 RTC ONCE at boot, then free-run
-    // purely on the MCU timer -- no periodic resync. Bit-banged I2C blocks the
-    // main loop (and would add keystroke latency), so after one good read we
-    // never touch the bus again. Until that first read succeeds we retry at most
-    // once a second (not every housekeeping pass) and show uptime meanwhile.
-    static bool     have_base    = false;
-    static uint32_t base_seconds = 0;  // RTC time-of-day (seconds) at the seed
-    static uint32_t base_tick    = 0;  // timer_read32() captured at the seed
-    static uint32_t last_try     = 0;
-
     uint32_t now = timer_read32();
-    if (!have_base && (last_try == 0 || timer_elapsed32(last_try) >= 1000)) {
+
+    // Seed the clock from the external PCF8563 RTC ONCE at boot, then free-run on
+    // the MCU timer. After one good read we never touch the bus again; until then
+    // retry at most once a second (not every housekeeping pass), showing uptime.
+    if (!have_base && !edit_active &&
+        (last_try == 0 || timer_elapsed32(last_try) >= 1000)) {
         last_try = now ? now : 1; // avoid the "0 == never tried" sentinel
         rtc_time_t t;
-        // Use the raw read and accept whatever the chip returns: this RTC has
-        // its VL (clock-integrity) flag set because it was never properly set,
-        // yet it keeps running time -- exactly what the stock firmware displays.
-        // Don't reject anything; just seed from the first read the bus ACKs.
+        // Accept whatever the chip returns (its VL flag is set since it was never
+        // properly set, yet it keeps running time -- like the stock firmware).
         if (rtc_read_raw(&t)) {
-            base_seconds = (uint32_t)t.hours * 3600 + (uint32_t)t.minutes * 60 + t.seconds;
-            base_tick    = now;
-            have_base    = true;
-            base_day     = t.day;
-            base_month   = t.month;
+            base      = t;
+            base_tick = now;
+            have_base = true;
         }
     }
 
-    // RTC base advanced by elapsed MCU time, or plain uptime until the first
-    // good read.
-    uint32_t total_seconds = have_base ? base_seconds + (now - base_tick) / 1000
-                                       : now / 1000;
-    hours   = (total_seconds / 3600) % 24;
-    minutes = (total_seconds / 60) % 60;
-    seconds = total_seconds % 60;
+    if (edit_active) { draw_edit(); return; }
 
-    // Only update the screen if the second has actually changed
-    if (seconds != last_drawn_second) {
-        last_drawn_second = seconds;
+    rtc_time_t shown;
+    clock_current(&shown);
 
-        // Format the string. Raw RTC fields are <100 (BCD-decoded), but size
-        // generously so any out-of-range debug value still fits without
-        // tripping -Wformat-truncation.
+    // Time HH:MM:SS, centred -- only when the second changes, to spare the SPI.
+    if (shown.seconds != last_drawn_second) {
+        last_drawn_second = shown.seconds;
         char time_str[16];
         snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
-                 (unsigned)hours, (unsigned)minutes, (unsigned)seconds);
-
-        // Draw the new time text
-        // (display, x, y, font, text)
-        qp_drawtext(qp_display, (PANEL_WIDTH - qp_textwidth(qp_font, time_str))/2, 49, qp_font, time_str);
+                 (unsigned)shown.hours, (unsigned)shown.minutes, (unsigned)shown.seconds);
+        qp_drawtext(qp_display, (PANEL_WIDTH - qp_textwidth(qp_font, time_str)) / 2,
+                    CLOCK_Y, qp_font, time_str);
     }
 
-    // Date (DD/MM), top-right. Drawn once per dashboard paint (it doesn't change
-    // mid-session), right-aligned clear of the top-row icons.
-    if (have_base && !date_drawn) {
-        date_drawn = true;
+    // Date DD/MM, top-right. Repainted once per dashboard paint (date changes
+    // only at midnight, where date_drawn is cleared to trigger a redraw).
+    static uint8_t drawn_day = 0, drawn_month = 0;
+    if (have_base && (!date_drawn || shown.day != drawn_day || shown.month != drawn_month)) {
+        date_drawn  = true;
+        drawn_day   = shown.day;
+        drawn_month = shown.month;
         char date_str[8];
         snprintf(date_str, sizeof(date_str), "%02u/%02u",
-                 (unsigned)base_day, (unsigned)base_month);
+                 (unsigned)shown.day, (unsigned)shown.month);
         int16_t w = qp_textwidth(qp_status_font, date_str);
         qp_drawtext(qp_display, PANEL_WIDTH - 1 - w, 2, qp_status_font, date_str);
     }

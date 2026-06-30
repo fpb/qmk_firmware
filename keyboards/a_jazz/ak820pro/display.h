@@ -9,6 +9,12 @@ bool display_get_power(void);
 void display_toggle_power(void);
 void display_control_power(void);
 
+// Clock set mode: Fn+Knob steps through day/month/HH/MM/SS, knob rotation
+// adjusts the selected field; the RTC is written only on the final step.
+void clock_edit_step(void);          // enter / next field / commit + exit
+void clock_edit_adjust(int8_t dir);  // +1 / -1 the selected field
+bool clock_edit_active(void);
+
 void display_draw_mac_logo(void);
 void display_draw_windows_logo(void);
 void display_draw_usb_logo(void);

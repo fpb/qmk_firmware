@@ -109,7 +109,17 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         return false;
     }
 
+    // While in clock set mode, the encoder (mapped to volume up/down) adjusts the
+    // selected field instead of changing volume. Consume both edges.
+    if (clock_edit_active() && (keycode == KC_VOLU || keycode == KC_VOLD)) {
+        if (record->event.pressed) clock_edit_adjust(keycode == KC_VOLU ? +1 : -1);
+        return false;
+    }
+
     switch (keycode) {
+        case CLK_SET:  // Fn+Knob press: enter / step fields / commit
+            if (record->event.pressed) clock_edit_step();
+            return false;
         case SCR_TOG:
             if (record->event.pressed) display_toggle_power();
             return false;
