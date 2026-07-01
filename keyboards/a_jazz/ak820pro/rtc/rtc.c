@@ -1,10 +1,10 @@
 // Copyright 2026 Fernando Birra
 // SPDX-License-Identifier: GPL-2.0-or-later
-//
+
 // Software (bit-banged) I2C master + PCF8563 driver for the AK820Pro's external
 // RTC (CHMC D8563F, a PCF8563 clone). The RTC is wired to P0.14 (SCL) and P0.15
 // (SDA) -- pins the SN32F290 hardware I2C peripheral cannot reach (see datasheet
-// PFPA_I2C), which is why the stock firmware bit-bangs and so do we.
+// PFPA_I2C), which is why bit-banging is required.
 
 #include "rtc.h"
 #include "quantum.h"

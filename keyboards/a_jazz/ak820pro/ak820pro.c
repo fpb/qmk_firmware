@@ -1,3 +1,6 @@
+// Copyright 2026 Fernando Birra
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 #include "ak820pro.h"
 
 #include "gpio.h"
