@@ -1,18 +1,5 @@
-/* Copyright (C) 2023 Fernando Birra
- * 
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
-
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright 2026 Fernando Birra <fernando.birra@gmail.com>
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 #include QMK_KEYBOARD_H
 
@@ -24,9 +11,6 @@ enum layer_names {
     MACBASE,
     MACFN
 };
-
-/* SCR_TOG and the BT* keycodes are keyboard-level (defined in ak820pro.h) and
- * handled in ak820pro.c; the keymap only references them in the layouts. */
 
 #define KC_TASK LGUI(KC_TAB)        // Task viewer
 #define KC_FLXP LGUI(KC_E)          // Windows file explorer
@@ -73,7 +57,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
      * └────┴────┴────┴────────────────────────┴───┴───┴───┴┴───┴───┴───┘
      */
     [WINFN] = LAYOUT_82_ansi(
-        QK_BOOT,    KC_BRID,    KC_BRIU,    KC_TASK,    KC_FLXP,    _______,    _______,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,     KC_VOLU,    SCR_TOG, KC_MUTE,
+        QK_BOOT,    KC_BRID,    KC_BRIU,    KC_TASK,    KC_FLXP,    _______,    _______,    KC_MPRV,    KC_MPLY,    KC_MNXT,    KC_MUTE,    KC_VOLD,     KC_VOLU,    SCR_TOG,    KC_MUTE,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,     _______,    _______,    _______,
         _______,    BT1,        BT2,        BT3,        BT24G,      _______,    _______,    _______,    _______,    _______,    BT_PAIR,    _______,     _______,    _______,    _______,
         _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,    _______,                 _______,    _______,
@@ -176,7 +160,3 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
     [MACFN] = {ENCODER_CCW_CW(KC_VOLD, KC_VOLU) }
 };
 #endif
-
-/* bluetooth_init() / bluetooth_task() are now invoked by QMK core
- * (quantum/keyboard.c) under BLUETOOTH_ENABLE, so no manual ch582 init/task
- * pumping here. */

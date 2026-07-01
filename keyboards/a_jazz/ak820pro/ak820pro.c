@@ -1,11 +1,11 @@
 #include "ak820pro.h"
 
 #include "gpio.h"
-
-#include "display.h"
-#include "ch582f_ajazz.h"
 #include "connection.h"
-#include "rtc.h"
+
+#include "graphics/display.h"
+#include "bluetooth/ch582f_ajazz.h"
+#include "rtc/rtc.h"
 #include "raw_hid.h"
 
 // Current wireless mode, derived from the tri-state slider. The Fn BT controls
@@ -25,6 +25,7 @@ static uint16_t bt_pair_timer = 0;
 static bool     bt_pair_armed = false;
 
 void early_hardware_init_post(void) {
+    // Configure SPI0 pins for the LCD panel
     SN_PFPA->SPI_b.MISO0 = 0b11;
     SN_PFPA->SPI_b.MOSI0 = 0b11;
     SN_PFPA->SPI_b.SCK0  = 0b11;
@@ -47,7 +48,7 @@ void early_hardware_init_post(void) {
     // Bring the bit-banged I2C lines to idle before the first RTC read.
     rtc_init();
 
-    // You can add any additional initialization code for your display here if needed
+    // Initialize the display subsystem (painter, fonts, images, etc.) and draw the splash screen.
     display_init_kb();
 
     // Chain the user hook: overriding keyboard_post_init_kb() replaces QMK's
@@ -159,7 +160,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     }
 }
 
-// Raw HID: host -> keyboard command channel (used by util/set-clock to set the
+// Raw HID: host -> keyboard command channel (used by set-clock utility to set the
 // RTC). Report layout (32 bytes, no report ID on the wire):
 //   [0]=command, then for 0x01 (set time):
 //   [1]=year-2000 [2]=month [3]=day [4]=weekday [5]=hour [6]=min [7]=sec
@@ -177,7 +178,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             .year    = (uint16_t)(2000 + data[1]),
         };
         if (rtc_set_time(&t)) {   // single write to the chip, clears VL
-            clock_set(&t);        // write-through: live clock updates, no reboot
+            display_clock_set(&t);        // write-through: live clock updates, no reboot
             data[1] = 0x00;
         } else {
             data[1] = 0xFF;
@@ -189,19 +190,24 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 }
 
 static inline void update_leds(void) {
-    // Update leds every 100ms to avoid excessive GPIO calls
-    static uint16_t last_check = 0;
-    if (timer_elapsed(last_check) < 100) return;  // check every 100ms
-    last_check = timer_read();
+    // Write each indicator only when its state changes (cheap reads each pass,
+    // GPIO writes only on transitions) -- no time throttle needed.
+    static int8_t last_chrg = -1, last_winlock = -1;
 
     // Charging LED logic: ON when charging, OFF otherwise
     bool chrg_active  = !gpio_read_pin(CHARGE_CHRG_PIN);
     bool stdby_active =  gpio_read_pin(CHARGE_STDBY_PIN);
-    bool is_charging = chrg_active && stdby_active;
-    gpio_write_pin(LED_CHARGING_PIN, is_charging);
+    bool is_charging  = chrg_active && stdby_active;
+    if (is_charging != last_chrg) {
+        gpio_write_pin(LED_CHARGING_PIN, is_charging);
+        last_chrg = is_charging;
+    }
 
     // Windows Lock LED logic: ON when no_gui is true, OFF otherwise
-    gpio_write_pin(LED_WINLOCK_PIN, keymap_config.no_gui);
+    if (keymap_config.no_gui != last_winlock) {
+        gpio_write_pin(LED_WINLOCK_PIN, keymap_config.no_gui);
+        last_winlock = keymap_config.no_gui;
+    }
 }
 
 __attribute__((weak)) void display_housekeeping_task(void) {}

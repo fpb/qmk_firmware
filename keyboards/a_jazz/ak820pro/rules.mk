@@ -8,19 +8,21 @@ QUANTUM_PAINTER_DRIVERS += gc9107_spi
 BLUETOOTH_ENABLE = yes
 BLUETOOTH_DRIVER = custom
 
+SRC += bluetooth/ch582f_ajazz.c
+
 # Dashboard graphics: splash, big clock font (Iosevka 30), small status font
 # (Roboto Mono 20), and the top-row Mac/Win + connection icons.
-SRC += graphics/sonixqmk.qgf.c
-SRC += graphics/Iosevka-Regular-30.qff.c
-SRC += graphics/robotomono20.qff.c
+SRC += graphics/res/sonixqmk.qgf.c
+SRC += graphics/res/Iosevka-Regular-30.qff.c
+SRC += graphics/res/robotomono20.qff.c
+SRC += graphics/res/apple_icon_24x24.qgf.c
+SRC += graphics/res/windows_icon_24x24.qgf.c
+SRC += graphics/res/cable_icon_24x24.qgf.c
+SRC += graphics/res/bluetooth_icon_24x24.qgf.c
+SRC += graphics/res/2_4_g_icon_24x24.qgf.c
 
-SRC += graphics/apple_icon_24x24.qgf.c
-SRC += graphics/windows_icon_24x24.qgf.c
-SRC += graphics/cable_icon_24x24.qgf.c
-SRC += graphics/bluetooth_icon_24x24.qgf.c
-SRC += graphics/2_4_g_icon_24x24.qgf.c
-
-SRC += display.c
-SRC += rtc.c
-SRC += bluetooth/ch582f_ajazz.c
-VPATH += $(KEYBOARD_PATH_1)/bluetooth
+SRC += graphics/display.c
+SRC += rtc/rtc.c
+VPATH += bluetooth
+VPATH += graphics
+VPATH += rtc

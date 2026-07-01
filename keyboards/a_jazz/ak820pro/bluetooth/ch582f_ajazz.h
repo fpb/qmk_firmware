@@ -9,7 +9,6 @@ typedef enum {
     CH582_PROFILE_BT_1     = 0x31, /* '1' */
     CH582_PROFILE_BT_2     = 0x32, /* '2' */
     CH582_PROFILE_BT_3     = 0x33, /* '3' */
-    CH582_PROFILE_BT_4     = 0x34, /* '4' */
     CH582_PROFILE_PAIR_24G = 0x35  /* '5' */
 } ch582_profile_t;
 
@@ -23,7 +22,6 @@ void ch582_pair(ch582_profile_t profile);
  * ch582_set_profile() first to choose the slot. */
 void ch582_enter_pairing(void);
 void ch582_cancel_connect(void);
-void ch582_capture_reset(void);
 void ch582_poll_status(void);
 void ch582_send_command(uint8_t cmd, const uint8_t *params, uint8_t param_len);
 void ch582_send_keyboard_report(report_keyboard_t *report);
@@ -39,5 +37,3 @@ uint8_t ch582_get_slot(void);
 uint8_t ch582_get_battery(void);
 /* Host LED bitmap last reported by the module (USB LED bits; bit1 = caps). From 5A frames. */
 uint8_t ch582_get_host_leds(void);
-
-/* Override default Serial driver: #define CH582_SERIAL_DRIVER SD0 */

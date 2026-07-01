@@ -37,7 +37,7 @@
 #endif
 
 static volatile bool    is_module_connected = false;
-/* Active BT slot 1-4. Derived from the selected 0xA6 profile, NOT from the 5B
+/* Active BT slot 1-3. Derived from the selected 0xA6 profile, NOT from the 5B
  * stream: a logic-analyzer capture proved the 5B second byte is a handshake-STAGE
  * code (0x23/0x31..0x34 seen regardless of slot), not the slot number. 0 = none. */
 static volatile uint8_t connected_slot = 0;
@@ -59,27 +59,6 @@ static volatile bool    usb_mode = false;
 static uint16_t         last_attempt_time = 0;
 /* Last time a battery poll (A6 53) was sent. */
 static uint16_t         last_battery_poll = 0;
-
-/* Telemetry trackers */
-volatile uint32_t debug_tx_packet_count = 0;
-volatile uint32_t debug_rx_byte_count   = 0;
-volatile uint32_t debug_rx_packet_count = 0;
-volatile uint8_t  debug_last_rx_type    = 0;
-volatile uint8_t  debug_last_rx_data    = 0;
-/* Count of A1 keyboard reports actually forwarded to the module (diagnostic:
- * lets the LCD show whether wireless keystrokes are leaving the SN32 at all). */
-volatile uint32_t debug_kbd_tx_count    = 0;
-
-/* Raw RX capture for protocol RE. Since console output is dead on this board, we
- * freeze the first CH582_CAPTURE_N bytes of the live stream into this buffer and
- * render it as paged hex on the LCD. Reset to grab a fresh burst. */
-#define CH582_CAPTURE_N 96
-volatile uint8_t  ch582_rx_capture[CH582_CAPTURE_N];
-volatile uint16_t ch582_rx_capture_len = 0;
-
-void ch582_capture_reset(void) {
-    ch582_rx_capture_len = 0;
-}
 
 /* Request a battery-level report from the module. Logic-analyzer-decoded from the
  * stock firmware: the MCU sends `A6 53` and the module replies with a `5C <pct>`
@@ -126,7 +105,6 @@ void ch582_send_keyboard_report(report_keyboard_t *report) {
         buf[2 + i] = report->keys[i];
     }
     ch582_send_command(0xA1, buf, sizeof(buf));
-    debug_kbd_tx_count++;
 }
 
 /* --- QMK Bluetooth driver API ------------------------------------------------
@@ -173,10 +151,8 @@ void bluetooth_send_mouse(report_mouse_t *report) {}
 
 /* Consumer control (volume/media, e.g. the encoder) over the wireless link.
  * The encoder emits HID consumer usages; without forwarding them here they only
- * work over USB. The A1 keyboard opcode is analyzer-confirmed, but the module's
- * consumer opcode was NOT captured -- 0xA3 + 2-byte little-endian usage is a
- * best-effort guess mirroring the A1 framing. VERIFY against a stock-fw capture
- * of a volume key in BT mode and adjust the opcode/layout if it differs. */
+ * work over USB. Frame is 0xA3 + 2-byte little-endian usage, mirroring the A1
+ * keyboard framing -- confirmed working on hardware over both BT and 2.4G. */
 void bluetooth_send_consumer(uint16_t usage) {
     if (!ch582_kbd_output_active()) return;
     uint8_t buf[2];
@@ -201,7 +177,6 @@ void ch582_send_command(uint8_t cmd, const uint8_t *params, uint8_t param_len) {
     tx_packet[total_len - 1]      = (uint8_t)(sum & 0xFF);
 
     sdWrite(&CH582_SERIAL_DRIVER, tx_packet, total_len);
-    debug_tx_packet_count++;
 }
 
 #if CH582_ACK_FRAMES
@@ -281,19 +256,9 @@ uint8_t ch582_get_host_leds(void) {
     return host_leds;
 }
 
-/* Diagnostics for the LCD: whether keystrokes are being forwarded to the module
- * and how many have gone out since boot. */
-bool ch582_output_active(void) {
-    return ch582_kbd_output_active();
-}
-
-uint32_t ch582_get_kbd_tx_count(void) {
-    return debug_kbd_tx_count;
-}
-
-/* Map a selected 0xA6 profile byte (0x31..0x34) to a 1..4 slot; 0 for 2.4G/none. */
+/* Map a selected 0xA6 profile byte (0x31..0x33) to a 1..3 slot; 0 for 2.4G/none. */
 static uint8_t profile_to_slot(uint8_t profile) {
-    if (profile >= CH582_PROFILE_BT_1 && profile <= CH582_PROFILE_BT_4) {
+    if (profile >= CH582_PROFILE_BT_1 && profile <= CH582_PROFILE_BT_3) {
         return profile - 0x30;
     }
     return 0;
@@ -357,13 +322,6 @@ void ch582_task(void) {
     while (bytes_processed < 64) {
         if (chnReadTimeout(&CH582_SERIAL_DRIVER, &c, 1, TIME_IMMEDIATE) == 0) break;
         bytes_processed++;
-        debug_rx_byte_count++;
-
-        /* Freeze the first CH582_CAPTURE_N bytes of the live stream for the LCD
-         * hex viewer (console output doesn't work on this board). */
-        if (ch582_rx_capture_len < CH582_CAPTURE_N) {
-            ch582_rx_capture[ch582_rx_capture_len++] = c;
-        }
 
         b2 = b1;
         b1 = b0;
@@ -374,15 +332,11 @@ void ch582_task(void) {
         if (b2 == 0x61 && b1 == 0x0D && b0 == 0x0A) {
             /* Periodic idle heartbeat; emitted while connected AND disconnected,
              * so it carries no connection state. Don't touch is_module_connected. */
-            debug_last_rx_type  = 0x61;
-            debug_last_rx_data  = 0x0D;
             matched             = true;
         } else if ((b2 == 0x5A || b2 == 0x5B || b2 == 0x5C) &&
                    b0 == ((uint8_t)(b2 + b1))) {
             uint8_t type       = b2;
             uint8_t d          = b1;
-            debug_last_rx_type = type;
-            debug_last_rx_data = d;
             switch (type) {
                 case 0x5A: /* host LED bitmap (caps lock = bit1) */
                     /* The 1-byte additive checksum is weak, so the mixed RX stream
@@ -432,7 +386,6 @@ void ch582_task(void) {
         }
 
         if (matched) {
-            debug_rx_packet_count++;
             /* Clear the window so the consumed bytes can't form a phantom overlap
              * match with the next byte. */
             b2 = b1 = b0 = 0;

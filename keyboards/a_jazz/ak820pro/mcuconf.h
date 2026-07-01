@@ -8,9 +8,5 @@
 #undef SN32_SERIAL_USE_UART2
 #define SN32_SERIAL_USE_UART2 TRUE
 
-//#define SN32_SERIAL_UART2_PRIORITY  1
-
-
-//#define SN32_GPT_USE_CT16B4                 TRUE
 
 

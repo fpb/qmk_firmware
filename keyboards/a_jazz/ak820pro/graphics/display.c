@@ -1,16 +1,16 @@
-#include "display.h"
+#include "graphics/display.h"
 
-#include "rtc.h"
+#include "rtc/rtc.h"
 
-#include "graphics/sonixqmk.qgf.h"
-#include "graphics/Iosevka-Regular-30.qff.h"
-#include "graphics/robotomono20.qff.h"
+#include "res/sonixqmk.qgf.h"
+#include "res/Iosevka-Regular-30.qff.h"
+#include "res/robotomono20.qff.h"
 
-#include "graphics/apple_icon_24x24.qgf.h"
-#include "graphics/windows_icon_24x24.qgf.h"
-#include "graphics/cable_icon_24x24.qgf.h"
-#include "graphics/bluetooth_icon_24x24.qgf.h"
-#include "graphics/2_4_g_icon_24x24.qgf.h"
+#include "res/apple_icon_24x24.qgf.h"
+#include "res/windows_icon_24x24.qgf.h"
+#include "res/cable_icon_24x24.qgf.h"
+#include "res/bluetooth_icon_24x24.qgf.h"
+#include "res/2_4_g_icon_24x24.qgf.h"
 
 #define PANEL_DC        D14
 #define PANEL_CS        B8
@@ -139,7 +139,7 @@ static void clock_current(rtc_time_t *out) {
 
 // Write-through: re-seed the live software clock from t (e.g. after a host sets
 // the RTC over raw HID), so the display jumps to the new time without a reboot.
-void clock_set(const rtc_time_t *t) {
+void display_clock_set(const rtc_time_t *t) {
     base              = *t;
     base_tick         = timer_read32();
     have_base         = true;
