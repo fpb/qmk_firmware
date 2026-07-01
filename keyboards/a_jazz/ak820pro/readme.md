@@ -43,6 +43,14 @@ Make example for this keyboard (after setting up your build environment):
 
 See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_tools) and the [make instructions](https://docs.qmk.fm/#/getting_started_make_guide) for more information. Brand new to QMK? Start with our [Complete Newbs Guide](https://docs.qmk.fm/#/newbs).
 
+### RTC I2C driver patch (required)
+
+The LCD clock is driven by an external PCF8563/D8563 RTC on P0.14/P0.15 — pins the SN32 hardware I2C peripheral cannot reach, so this port uses ChibiOS's software (bit-banged) I2C fallback LLD (`USE_HAL_I2C_FALLBACK = yes`). The stock fallback driver does **not** work on this board (in `OPENDRAIN=FALSE` mode it releases SCL to input each clock, which the SN32 reads back low, so every transfer times out). A small patch — [`fix.diff`](fix.diff) — keeps SCL push-pull throughout, idles the pins in `i2c_lld_start`, and cleans up the SDA read/release ordering. Apply it before building:
+
+    $ cd lib/chibios-contrib && git apply ../../keyboards/a_jazz/ak820pro/fix.diff
+
+Note: it is a working-tree edit of the `lib/chibios-contrib` submodule and is discarded by `git submodule update`; re-apply if that happens.
+
 ## Bootloader
 
 Enter the bootloader:
