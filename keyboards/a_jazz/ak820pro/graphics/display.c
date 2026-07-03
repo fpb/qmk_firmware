@@ -78,8 +78,14 @@ static bool display_backlight_init(void) {
     return true;
 }
 
-// y position of the big HH:MM:SS clock (top of the glyphs).
+// y position of the big clock (top of the glyphs).
 #define CLOCK_Y 49
+
+// Clock format: 1 = HH:MM:SS (per-second redraw of the changed cells), 0 = HH:MM
+// (redraws only once a minute -> even cheaper SPI). Override in config.h.
+#ifndef DISPLAY_CLOCK_SHOW_SECONDS
+#    define DISPLAY_CLOCK_SHOW_SECONDS 1
+#endif
 
 // Force-redraw markers; reset on a full dashboard repaint and on a clock_set.
 static uint8_t last_drawn_second = 60; // 60 forces an immediate draw
@@ -172,15 +178,36 @@ void draw_clock(void) {
     rtc_time_t shown;
     clock_current(&shown);
 
-    // Time HH:MM:SS, centred -- only when the second changes, to spare the SPI.
-    if (shown.seconds != last_drawn_second) {
-        last_drawn_second = shown.seconds;
-        char time_str[16];
-        snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
-                 (unsigned)shown.hours, (unsigned)shown.minutes, (unsigned)shown.seconds);
-        qp_drawtext(qp_display, (PANEL_WIDTH - qp_textwidth(qp_font, time_str)) / 2,
-                    CLOCK_Y, qp_font, time_str);
+    // Time HH:MM:SS. To minimise the blocking SPI flush, redraw ONLY the character
+    // cells that changed (usually just the seconds) rather than the whole string.
+    // The clock font (Iosevka) is monospace, so every cell has the same width.
+    static char last_time[12] = {0};
+    if (last_drawn_second == 60) memset(last_time, 0, sizeof(last_time)); // forced full repaint
+    char time_str[12];
+#if DISPLAY_CLOCK_SHOW_SECONDS
+    snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
+             (unsigned)shown.hours, (unsigned)shown.minutes, (unsigned)shown.seconds);
+#else
+    snprintf(time_str, sizeof(time_str), "%02u:%02u",
+             (unsigned)shown.hours, (unsigned)shown.minutes);
+#endif
+    if (strcmp(time_str, last_time) != 0) {
+        uint8_t n       = (uint8_t)strlen(time_str);         // 8 (HH:MM:SS) or 5 (HH:MM)
+        int16_t total_w = qp_textwidth(qp_font, time_str);
+        int16_t x0      = (PANEL_WIDTH - total_w) / 2;
+        int16_t cw      = total_w / n;                       // monospace cell width
+        //int16_t fh      = qp_font->line_height;
+        for (uint8_t i = 0; i < n; i++) {
+            if (time_str[i] != last_time[i]) {
+                int16_t cx = x0 + i * cw;
+                //qp_rect(qp_display, cx, CLOCK_Y, cx + cw - 1, CLOCK_Y + fh - 1, 0, 255, 0, true); // clear cell (bg)
+                char ch[2] = {time_str[i], 0};
+                qp_drawtext(qp_display, cx, CLOCK_Y, qp_font, ch);
+            }
+        }
+        strcpy(last_time, time_str);
     }
+    last_drawn_second = shown.seconds; // clear the forced-repaint sentinel
 
     // Date DD/MM, top-right. Repainted once per dashboard paint (date changes
     // only at midnight, where date_drawn is cleared to trigger a redraw).
@@ -239,7 +266,7 @@ bool display_init_kb(void) {
         PANEL_CS,
         PANEL_DC,
         PANEL_RST,
-        4, //spi_divisor,
+        2, //spi_divisor (was 4; 2 = ~2x faster SPI -> shorter blocking flush)
         3  //spi_mode
     );         // Create the display
 
