@@ -196,11 +196,11 @@ void draw_clock(void) {
         int16_t total_w = qp_textwidth(qp_font, time_str);
         int16_t x0      = (PANEL_WIDTH - total_w) / 2;
         int16_t cw      = total_w / n;                       // monospace cell width
-        int16_t fh      = qp_font->line_height;
+        //int16_t fh      = qp_font->line_height;
         for (uint8_t i = 0; i < n; i++) {
             if (time_str[i] != last_time[i]) {
                 int16_t cx = x0 + i * cw;
-                qp_rect(qp_display, cx, CLOCK_Y, cx + cw - 1, CLOCK_Y + fh - 1, 0, 255, 0, true); // clear cell (bg)
+                //qp_rect(qp_display, cx, CLOCK_Y, cx + cw - 1, CLOCK_Y + fh - 1, 0, 255, 0, true); // clear cell (bg)
                 char ch[2] = {time_str[i], 0};
                 qp_drawtext(qp_display, cx, CLOCK_Y, qp_font, ch);
             }
