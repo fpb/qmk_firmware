@@ -11,5 +11,10 @@
 #undef SN32_SERIAL_USE_UART2
 #define SN32_SERIAL_USE_UART2 TRUE
 
+// RGB matrix software PWM uses CT16B1 as the scan timer.
+#undef SN32_PWM_USE_CT16B1
+#define SN32_PWM_USE_CT16B1 TRUE
+#define SN32_PWM_NO_RESET   TRUE
+
 
 

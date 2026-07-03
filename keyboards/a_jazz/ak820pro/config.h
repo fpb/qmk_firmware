@@ -3,11 +3,34 @@
 
 #pragma once
 
-/* RGB matrix configuration can't be fully expressed in JSON as of now */
-//#define SN32F2XX_RGB_MATRIX_ROW_PINS { A11, B4, B5, A8, A9, D8, D9, D10, D11, D12, D13, D16, D17, D18, C10, C11, C12, C13 }
+/* RGB matrix (software PWM on SN32F299). The 18 hardware row pins are 6 key-rows
+ * x 3 colour channels in R,B,G order per group. Columns are shared with the key
+ * matrix (COL_PINS omitted -> SHARED_MATRIX uses MATRIX_COL_PINS). */
+#define SN32F2XX_RGB_MATRIX_ROW_PINS { A11, B4, B5, A8, A9, D8, D9, D10, D11, D12, D13, D16, D17, D18, C10, C11, C12, C13 }
+#define SN32F2XX_PWM_CONTROL   SOFTWARE_PWM
+#define SN32F2XX_PWM_DIRECTION COL2ROW      // PWM (software) on columns, rows are the mux select
+#define SN32F2XX_RGB_MATRIX_ROW_CHANNELS 3  // R, B, G
+// ROWS defaults to MATRIX_ROWS (6); ROWS_HW = ROWS * ROW_CHANNELS = 18; COLS = MATRIX_COLS (15).
 
-/* Configure the effects:                                              */
-//#define RGB_MATRIX_TYPING_HEATMAP_DECREASE_DELAY_MS 50
+// 81 per-key LEDs (82 keys minus the encoder/knob at matrix [0][14]).
+#define RGB_MATRIX_LED_COUNT 81
+
+// Columns are shared between the key matrix and the (column-active-LOW) LED matrix.
+// Drive unselected key-rows HIGH (instead of leaving them high-Z): a pressed switch
+// then pulls its shared column to INACTIVE (high) rather than active (low), so a
+// keypress no longer lights up its whole LED column ("column leak").
+#define MATRIX_UNSELECT_DRIVE_HIGH
+
+// Software PWM tuning. The SN32 SW-PWM ISR re-arms itself continuously, so its CPU
+// cost = callback_rate x per_callback_cost, competing with USB / the LCD SPI / the
+// wireless UART. Two knobs balance flicker vs CPU headroom:
+//   - HUE_STEP sizes the per-callback PWM loop (COLS x HUE_STEP GPIO ops). Lower =
+//     cheaper ISR and (perceptually) less flicker; 2 tested smoothest here.
+//   - LED_PROCESS_LIMIT sizes the callback rate; 17 = the natural value for 81 LEDs.
+// (Clean typing ultimately came from cutting the LCD's per-second SPI flush cost,
+// not from these -- see graphics/display.c.)
+#define RGB_MATRIX_HUE_STEP 2
+#define RGB_MATRIX_LED_PROCESS_LIMIT 17
 
 #define SPI_DRIVER SPID0
 
