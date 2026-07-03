@@ -12,8 +12,8 @@
 #define SN32F2XX_RGB_MATRIX_ROW_CHANNELS 3  // R, B, G
 // ROWS defaults to MATRIX_ROWS (6); ROWS_HW = ROWS * ROW_CHANNELS = 18; COLS = MATRIX_COLS (15).
 
-// 81 per-key LEDs (82 keys minus the encoder/knob at matrix [0][14]).
-#define RGB_MATRIX_LED_COUNT 81
+// The per-key LED map (81 LEDs; knob at matrix [0][14] has none) and
+// RGB_MATRIX_LED_COUNT are defined by the rgb_matrix "layout" in keyboard.json.
 
 // Columns are shared between the key matrix and the (column-active-LOW) LED matrix.
 // Drive unselected key-rows HIGH (instead of leaving them high-Z): a pressed switch
