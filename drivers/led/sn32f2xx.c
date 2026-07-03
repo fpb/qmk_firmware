@@ -122,8 +122,11 @@ static void rgb_callback(PWMDriver *pwmp);
 #    error Driver is MCU specific to the Sonix SN32F2 family.
 #endif // !defined(SN32F2)
 
-#if (defined(SN32F240B) || defined(SN32F240C))
-/* PWM configuration structure. We use timer CT16B1 with 24 channels. */
+#if (defined(SN32F240B) || defined(SN32F240C) || defined(SN32F290))
+/* PWM configuration structure. On F240B/C this is CT16B1 with 24 channels; on
+ * F290 CT16B1 has only 12 usable channels, but with SOFTWARE_PWM the timer is
+ * used solely as a free-running counter + periodic ISR, so the channel count is
+ * irrelevant (rgb_callback bit-bangs the LED pins directly). */
 static PWMConfig pwmcfg = {
     freq,        /* PWM clock frequency. */
     periodticks, /* PWM period = periodticks * (1 / CH_CFG_ST_FREQUENCY) ≈ 255 * (1 / 187500) ≈ 1.36 ms */
@@ -583,7 +586,7 @@ void sn32f2xx_init(void) {
     }
 
     // Determine which PWM channels we need to control
-#if (defined(SN32F240B) || defined(SN32F240C))
+#if (defined(SN32F240B) || defined(SN32F240C) || defined(SN32F290))
     rgb_ch_ctrl(&pwmcfg);
 #elif defined(SN32F260)
     rgb_ch_ctrl();
