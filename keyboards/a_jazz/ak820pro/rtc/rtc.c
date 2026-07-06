@@ -43,9 +43,11 @@
 #endif
 
 static void rtc_i2c_delay(void) {
+    chSysLock();
     for (volatile uint32_t i = 0; i < RTC_I2C_DELAY_NOPS; i++) {
         __asm__ volatile("nop");
     }
+    chSysUnlock();
 }
 
 static const I2CConfig i2ccfg = {
