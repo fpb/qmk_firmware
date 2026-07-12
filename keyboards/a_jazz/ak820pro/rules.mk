@@ -19,7 +19,7 @@ SRC += bluetooth/ch582f_ajazz.c
 # (Roboto Mono 20), and the top-row Mac/Win + connection icons.
 SRC += graphics/res/sonixqmk.qgf.c
 SRC += graphics/res/Iosevka-Regular-30.qff.c
-SRC += graphics/res/robotomono20.qff.c
+SRC += graphics/res/Iosevka-Medium-20.qff.c
 SRC += graphics/res/apple_icon_24x24.qgf.c
 SRC += graphics/res/windows_icon_24x24.qgf.c
 SRC += graphics/res/cable_icon_24x24.qgf.c

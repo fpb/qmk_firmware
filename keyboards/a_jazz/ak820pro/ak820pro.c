@@ -40,15 +40,18 @@ void early_hardware_init_post(void) {
 }
 
  void keyboard_post_init_kb(void) {
-    // Set up GPIO pins for the Windows Lock and Charging LEDs
+    // Windows Lock and Charging LEDs: outputs, off initially. update_leds() then
+    // tracks their real state, writing only on a change.
     gpio_set_pin_output(LED_WINLOCK_PIN);
+    gpio_write_pin(LED_WINLOCK_PIN, false);
     gpio_set_pin_output(LED_CHARGING_PIN);
+    gpio_write_pin(LED_CHARGING_PIN, false);
 
     // Set up GPIO pins for the charging status inputs
     gpio_set_pin_input_high(CHARGE_CHRG_PIN);   // input with pull-up
     gpio_set_pin_input_high(CHARGE_STDBY_PIN);  // input with pull-up
 
-    // Bring the bit-banged I2C lines to idle before the first RTC read.
+    // Bring up the clock: I2C, the SN32 1 Hz counter, and a first PCF8563 seed.
     rtc_init();
 
     // Initialize the display subsystem (painter, fonts, images, etc.) and draw the splash screen.
@@ -180,49 +183,50 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             .month   = data[2],
             .year    = (uint16_t)(2000 + data[1]),
         };
-        if (rtc_set_time(&t)) {   // single write to the chip, clears VL
-            display_clock_set(&t);        // write-through: live clock updates, no reboot
-            data[1] = 0x00;
-        } else {
-            data[1] = 0xFF;
-        }
+        // Sets both the PCF8563 (persist) and the live SN32 clock; the display
+        // picks it up within a second via rtc_get_time(). Status reflects the
+        // PCF (persistence) write.
+        data[1] = rtc_set_time(&t) ? 0x00 : 0xFF;
     } else {
         data[1] = 0xFE;
     }
     raw_hid_send(data, length);
 }
 
-static inline void update_leds(void) {
-    // Write each indicator only when its state changes (cheap reads each pass,
-    // GPIO writes only on transitions) -- no time throttle needed.
-    static int8_t last_chrg = -1, last_winlock = -1;
 
-    // Charging LED logic: ON when charging, OFF otherwise
-    bool chrg_active  = !gpio_read_pin(CHARGE_CHRG_PIN);
-    bool stdby_active =  gpio_read_pin(CHARGE_STDBY_PIN);
-    bool is_charging  = chrg_active && stdby_active;
+static void update_leds(void) {
+    // Charging LED: on only while actively charging -- CHRG low (active) AND
+    // STDBY high (not "done").
+    static bool last_chrg = false;
+    bool is_charging = !gpio_read_pin(CHARGE_CHRG_PIN) && gpio_read_pin(CHARGE_STDBY_PIN);
     if (is_charging != last_chrg) {
         gpio_write_pin(LED_CHARGING_PIN, is_charging);
         last_chrg = is_charging;
     }
 
-    // Windows Lock LED logic: ON when no_gui is true, OFF otherwise
-    if (keymap_config.no_gui != last_winlock) {
-        gpio_write_pin(LED_WINLOCK_PIN, keymap_config.no_gui);
-        last_winlock = keymap_config.no_gui;
+    // Windows Lock LED: mirrors the GUI-lock flag.
+    static bool last_winlock = false;
+    bool winlock = keymap_config.no_gui;
+    if (winlock != last_winlock) {
+        gpio_write_pin(LED_WINLOCK_PIN, winlock);
+        last_winlock = winlock;
     }
 }
 
 __attribute__((weak)) void display_housekeeping_task(void) {}
 
 void housekeeping_task_kb(void) {
-    update_leds();
-    display_control_power();
 
-    display_housekeeping_task();
+    // Throttle the housekeeping to 10 Hz
+    static uint32_t last_t = 0;
+    if (timer_elapsed32(last_t) >= 100) {
+        last_t = timer_read32();
 
-    // Chain the user hook: QMK's default housekeeping_task_kb() calls
-    // housekeeping_task_user(), but overriding this function replaces that
-    // default.
+        update_leds();
+        rtc_task();
+        display_housekeeping_task();
+    }
+
+    // Chain the user hook
     housekeeping_task_user();
 }

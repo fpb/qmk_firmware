@@ -7,7 +7,7 @@
 
 #include "res/sonixqmk.qgf.h"
 #include "res/Iosevka-Regular-30.qff.h"
-#include "res/robotomono20.qff.h"
+#include "res/Iosevka-Medium-20.qff.h"
 
 #include "res/apple_icon_24x24.qgf.h"
 #include "res/windows_icon_24x24.qgf.h"
@@ -26,13 +26,13 @@
 #define LCD_OFFSET_X 1
 #define LCD_OFFSET_Y 2
 
-// Bottom row: y position of the wireless status line (Roboto Mono 20 is ~20px
+// Bottom row: y position of the wireless status line (Iosevka 20 is ~20px
 // tall, so 106 leaves it clear of the panel bottom at 128).
 #define STATUS_Y 106
 
 static painter_device_t qp_display;
 static painter_font_handle_t qp_font;        // big clock font (Iosevka 30)
-static painter_font_handle_t qp_status_font; // small status font (Roboto Mono 20)
+static painter_font_handle_t qp_status_font; // small status font (Iosevka 20)
 static painter_image_handle_t qp_splash_image;
 
 static painter_image_handle_t qp_mac_logo;
@@ -52,29 +52,24 @@ enum {
 };
 static uint8_t connection_mode = CONN_MODE_WIRED;
 
-void display_control_power(void) {
-    static bool last_power = false;
-
-    if(display_powered != last_power) {
-        gpio_write_pin(PANEL_BKL, display_powered);
-        last_power = display_powered;
-    }
-}
-
 bool display_get_power(void) {
     return display_powered;
 }
 
+// Backlight is event-driven: written here whenever the power state changes, so
+// housekeeping doesn't need to poll it.
 void display_set_power(bool on) {
     display_powered = on;
+    gpio_write_pin(PANEL_BKL, on);
 }
 
 void display_toggle_power(void) {
-    display_powered = !display_powered;
+    display_set_power(!display_powered);
 }
 
 static bool display_backlight_init(void) {
     gpio_set_pin_output(PANEL_BKL);
+    gpio_write_pin(PANEL_BKL, display_powered); // initial state (on)
     return true;
 }
 
@@ -84,105 +79,29 @@ static bool display_backlight_init(void) {
 // Clock format: 1 = HH:MM:SS (per-second redraw of the changed cells), 0 = HH:MM
 // (redraws only once a minute -> even cheaper SPI). Override in config.h.
 #ifndef DISPLAY_CLOCK_SHOW_SECONDS
-#    define DISPLAY_CLOCK_SHOW_SECONDS 1
+#    define DISPLAY_CLOCK_SHOW_SECONDS TRUE
 #endif
 
-// Force-redraw markers; reset on a full dashboard repaint and on a clock_set.
-static uint8_t last_drawn_second = 60; // 60 forces an immediate draw
-static bool    date_drawn        = false;
+// Set by display_redraw_dashboard() after it clears the screen, to force a full
+// clock+date repaint over the cleared background (the per-cell diff below would
+// otherwise skip an unchanged string). Starts true so the first paint is full.
+static bool clock_force_repaint = true;
 
-// The software clock: a full date+time captured at base_tick, advanced purely
-// by the MCU timer (no periodic RTC resync -- bit-banged I2C would add keystroke
-// latency). base rolls forward across midnight so the date stays correct.
-static bool       have_base = false;
-static rtc_time_t base;            // date+time as of base_tick
-static uint32_t   base_tick = 0;   // timer_read32() captured at the seed/commit
-static uint32_t   last_try  = 0;   // throttles the boot seed retries
-
-// --- Date arithmetic (for midnight rollover). -------------------------------
-static uint8_t days_in_month(uint8_t month, uint16_t year) {
-    static const uint8_t dim[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
-    if (month < 1 || month > 12) return 31;
-    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) return 29;
-    return dim[month - 1];
-}
-
-static void date_add_days(rtc_time_t *t, uint32_t days) {
-    while (days--) {
-        if (++t->day > days_in_month(t->month, t->year)) {
-            t->day = 1;
-            if (++t->month > 12) { t->month = 1; t->year++; }
-        }
-        if (++t->weekday > 6) t->weekday = 0;
-    }
-}
-
-// Compute the current displayed time, advancing base across midnight in place.
-static void clock_current(rtc_time_t *out) {
-    uint32_t now = timer_read32();
-    if (!have_base) {
-        uint32_t s = now / 1000; // uptime fallback until the first good read
-        out->seconds = s % 60;
-        out->minutes = (s / 60) % 60;
-        out->hours   = (s / 3600) % 24;
-        out->day = out->month = out->weekday = 0;
-        out->year = 0;
-        return;
-    }
-    uint32_t sod = (uint32_t)base.hours * 3600 + base.minutes * 60 + base.seconds
-                 + (now - base_tick) / 1000;
-    if (sod >= 86400) { // crossed one or more midnights: roll the date forward
-        uint32_t days = sod / 86400;
-        date_add_days(&base, days);
-        base_tick += days * 86400000UL;
-        sod %= 86400;
-        base.hours   = (uint8_t)(sod / 3600);
-        base.minutes = (uint8_t)((sod / 60) % 60);
-        base.seconds = (uint8_t)(sod % 60);
-    }
-    *out = base;
-    out->hours   = (uint8_t)(sod / 3600);
-    out->minutes = (uint8_t)((sod / 60) % 60);
-    out->seconds = (uint8_t)(sod % 60);
-}
-
-// Write-through: re-seed the live software clock from t (e.g. after a host sets
-// the RTC over raw HID), so the display jumps to the new time without a reboot.
-void display_clock_set(const rtc_time_t *t) {
-    base              = *t;
-    base_tick         = timer_read32();
-    have_base         = true;
-    last_drawn_second = 60;   // force the time/date to repaint at the new value
-    date_drawn        = false;
-}
+static void draw_status(bool force); // CH582F status: battery + channel digit
 
 void draw_clock(void) {
-    uint32_t now = timer_read32();
-
-    // Seed the clock from the external PCF8563 RTC ONCE at boot, then free-run on
-    // the MCU timer. After one good read we never touch the bus again; until then
-    // retry at most once a second (not every housekeeping pass), showing uptime.
-    if (!have_base &&
-        (last_try == 0 || timer_elapsed32(last_try) >= 1000)) {
-        last_try = now ? now : 1; // avoid the "0 == never tried" sentinel
-        rtc_time_t t;
-        // Accept whatever the chip returns (its VL flag is set since it was never
-        // properly set, yet it keeps running time -- like the stock firmware).
-        if (rtc_read_raw(&t)) {
-            base      = t;
-            base_tick = now;
-            have_base = true;
-        }
-    }
-
+    // The rtc module owns both physical clocks; just ask it for the time. Until
+    // it has been seeded from a valid PCF8563 read it returns false, in which
+    // case show 00:00:00 rather than a bogus date.
     rtc_time_t shown;
-    clock_current(&shown);
+    bool valid = rtc_get_time(&shown);
+    if (!valid) memset(&shown, 0, sizeof(shown));
 
     // Time HH:MM:SS. To minimise the blocking SPI flush, redraw ONLY the character
     // cells that changed (usually just the seconds) rather than the whole string.
     // The clock font (Iosevka) is monospace, so every cell has the same width.
     static char last_time[12] = {0};
-    if (last_drawn_second == 60) memset(last_time, 0, sizeof(last_time)); // forced full repaint
+    if (clock_force_repaint) memset(last_time, 0, sizeof(last_time)); // invalidate -> full repaint
     char time_str[12];
 #if DISPLAY_CLOCK_SHOW_SECONDS
     snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
@@ -200,20 +119,16 @@ void draw_clock(void) {
         for (uint8_t i = 0; i < n; i++) {
             if (time_str[i] != last_time[i]) {
                 int16_t cx = x0 + i * cw;
-                //qp_rect(qp_display, cx, CLOCK_Y, cx + cw - 1, CLOCK_Y + fh - 1, 0, 255, 0, true); // clear cell (bg)
                 char ch[2] = {time_str[i], 0};
                 qp_drawtext(qp_display, cx, CLOCK_Y, qp_font, ch);
             }
         }
         strcpy(last_time, time_str);
     }
-    last_drawn_second = shown.seconds; // clear the forced-repaint sentinel
-
-    // Date DD/MM, top-right. Repainted once per dashboard paint (date changes
-    // only at midnight, where date_drawn is cleared to trigger a redraw).
+    // Date DD/MM, top-right. Repainted on a forced full paint or when it actually
+    // changes (at midnight).
     static uint8_t drawn_day = 0, drawn_month = 0;
-    if (have_base && (!date_drawn || shown.day != drawn_day || shown.month != drawn_month)) {
-        date_drawn  = true;
+    if (valid && (clock_force_repaint || shown.day != drawn_day || shown.month != drawn_month)) {
         drawn_day   = shown.day;
         drawn_month = shown.month;
         char date_str[8];
@@ -222,6 +137,8 @@ void draw_clock(void) {
         int16_t w = qp_textwidth(qp_status_font, date_str);
         qp_drawtext(qp_display, PANEL_WIDTH - 1 - w, 2, qp_status_font, date_str);
     }
+
+    clock_force_repaint = false; // consumed by both the time and date above
 }
 
 uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
@@ -232,8 +149,7 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
     qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
 
     // Full repaint: force the clock and date to redraw over the cleared screen.
-    last_drawn_second = 60;
-    date_drawn        = false;
+    clock_force_repaint = true;
 
     // Update Mac/Windows icon
     if(mac_mode)
@@ -251,6 +167,9 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
 
     // Draw the clock
     draw_clock();
+
+    // Repaint the CH582F status (battery + channel digit) over the cleared screen.
+    draw_status(true);
 
     // Flush the display to ensure everything is drawn
     qp_flush(qp_display);
@@ -273,13 +192,10 @@ bool display_init_kb(void) {
     qp_set_viewport_offsets(qp_display, LCD_OFFSET_X, LCD_OFFSET_Y);
     qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
 
-    // LCD backlight on
-    display_backlight_init();
-
     qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
 
     qp_font = qp_load_font_mem(font_Iosevka_Regular_30);
-    qp_status_font = qp_load_font_mem(font_robotomono20);
+    qp_status_font = qp_load_font_mem(font_Iosevka_Medium_20);
     qp_splash_image = qp_load_image_mem(gfx_sonixqmk);
 
     qp_mac_logo = qp_load_image_mem(gfx_apple_icon_24x24);
@@ -293,6 +209,8 @@ bool display_init_kb(void) {
 
     qp_close_image(qp_splash_image);
 
+    // LCD backlight on
+    display_backlight_init();
 
     bool res = display_init_user();
     if(res) // No more display initialization steps, flush the display to ensure everything is drawn
@@ -315,47 +233,50 @@ extern bool    ch582_is_usb(void);
 extern uint8_t ch582_get_slot(void);
 extern uint8_t ch582_get_battery(void);
 
-// Bottom row: wireless mode label (USB / 2.4G / BTn / idle) on the left and the
-// CH582F battery level on the right. Redrawn only when something changes, to
-// avoid hammering the slow display SPI on every housekeeping pass.
-static void draw_status_line(void) {
-    static bool    init = false;
-    static bool    last_conn = false;
-    static bool    last_24g = false;
-    static bool    last_usb = false;
-    static uint8_t last_slot = 0xFF;
-    static uint8_t last_batt = 0xFE;
+// The top connection icon lives at (CONN_ICON_X, 0), 24x24. The channel digit is
+// drawn just to its right; keep the clear cell narrow so it never reaches the
+// top-right date.
+#define CONN_ICON_X   32
+#define CONN_ICON_W   24
+#define CONN_NUM_X    (CONN_ICON_X + CONN_ICON_W + 1)
+#define CONN_NUM_W    12
 
-    bool    conn = ch582_is_connected();
-    bool    g24  = ch582_is_24g();
-    bool    usb  = ch582_is_usb();
-    uint8_t slot = ch582_get_slot();
+// Channel digit next to the connection icon: the connected BT slot (1-3) in BT
+// mode, '1' in 2.4G mode, nothing for USB or while not connected. Redrawn only on
+// change (or when forced after a dashboard repaint).
+static void draw_conn_number(bool force) {
+    char c = 0; // 0 -> nothing shown next to the icon
+    if (ch582_is_connected() && !ch582_is_usb()) {
+        if (ch582_is_24g()) {
+            c = '1';
+        } else {
+            uint8_t slot = ch582_get_slot();
+            if (slot >= 1 && slot <= 3) c = (char)('0' + slot);
+        }
+    }
+
+    static char last_c = -1; // force the first paint
+    if (!force && c == last_c) return;
+    last_c = c;
+
+    // Clear the digit cell (match the green dashboard background), then draw.
+    qp_rect(qp_display, CONN_NUM_X, 0, CONN_NUM_X + CONN_NUM_W, CONN_ICON_W - 1, 0, 255, 0, true);
+    if (c) {
+        char s[2] = {c, 0};
+        qp_drawtext(qp_display, CONN_NUM_X, 2, qp_status_font, s);
+    }
+}
+
+// Bottom row: just the CH582F battery level (right-aligned). Redrawn only when it
+// changes, to avoid hammering the slow display SPI on every housekeeping pass.
+static void draw_battery(bool force) {
+    static uint8_t last_batt = 0xFE;
     uint8_t batt = ch582_get_battery();
-    if (init && conn == last_conn && g24 == last_24g && usb == last_usb &&
-        slot == last_slot && batt == last_batt) return;
-    init      = true;
-    last_conn = conn;
-    last_24g  = g24;
-    last_usb  = usb;
-    last_slot = slot;
+    if (!force && batt == last_batt) return;
     last_batt = batt;
 
     // Clear the bottom strip (match the green dashboard background).
     qp_rect(qp_display, 0, STATUS_Y, PANEL_WIDTH - 1, PANEL_HEIGHT - 1, 0, 255, 0, true);
-
-    char buf[21];
-    if (usb) {
-        snprintf(buf, sizeof(buf), "USB");
-    } else if (g24) {
-        snprintf(buf, sizeof(buf), conn ? "2.4G" : "2.4G?");
-    } else if (conn && slot) {
-        snprintf(buf, sizeof(buf), "BT%u", slot);
-    } else if (conn) {
-        snprintf(buf, sizeof(buf), "BT");
-    } else {
-        snprintf(buf, sizeof(buf), "idle");
-    }
-    qp_drawtext(qp_display, 0, STATUS_Y, qp_status_font, buf);
 
     if (batt <= 100) {
         char bbuf[8];
@@ -365,14 +286,29 @@ static void draw_status_line(void) {
     }
 }
 
+// Refresh the CH582F-driven status: battery level and the connection channel
+// digit. force=true repaints unconditionally (used after a full dashboard clear).
+static void draw_status(bool force) {
+    draw_conn_number(force);
+    draw_battery(force);
+}
+
 void display_housekeeping_task(void) {
     // Call the user-defined housekeeping task first. If it returns false, skip the default housekeeping.
     if(!display_housekeeping_task_user())
         return;
 
     if(splash_cleared) {
-        draw_clock();
-        draw_status_line();
+        // Repaint the clock once per RTC second (when the RTC seconds counter
+        // advances) -- the redraw is paced by the timebase itself, so it also
+        // caps the blocking SPI cost to the RTC tick rate.
+        static uint32_t last_shown_sec = UINT32_MAX;
+        uint32_t sec = rtc_get_seconds(); // cheap tick counter -- no localtime() per pass
+        if (sec != last_shown_sec) {
+            last_shown_sec = sec;
+            draw_clock();
+            draw_status(false); // once/sec too; self-guards, so only draws on change
+        }
     }
 
     qp_flush(qp_display);

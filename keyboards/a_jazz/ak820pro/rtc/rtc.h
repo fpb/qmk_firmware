@@ -5,8 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* Time/date read from the external PCF8563-compatible RTC (CHMC D8563F).
- * All fields are plain decimal (already BCD-decoded). */
+/* Wall date/time in plain decimal (human-natural: month 1-12, year e.g. 2026). */
 typedef struct {
     uint8_t  seconds;  // 0-59
     uint8_t  minutes;  // 0-59
@@ -17,20 +16,32 @@ typedef struct {
     uint16_t year;     // e.g. 2026
 } rtc_time_t;
 
-/* Release both I2C lines (idle high). Safe to call once at startup. */
+/* The clock behind this API is two physical devices that the module hides: an
+ * external battery-backed PCF8563 (accurate reference) and the SN32's internal
+ * RTC (the live 1 Hz clock the display reads), seeded from and -- with
+ * RTC_AUTO_CALIBRATION -- continuously disciplined to the PCF8563. Consumers just
+ * ask for the time. */
+
+/* Bring up the clock: start I2C, enable the SN32 1 Hz counter, and take a first
+ * seed from the PCF8563. Call once from keyboard_post_init_kb (thread context).
+ * If the PCF isn't readable/set yet, rtc_task() keeps retrying. */
 void rtc_init(void);
 
-/* Read the current time. Returns false on a bus NACK or if the RTC reports a
- * low-voltage / clock-integrity loss (VL bit) -- in that case *out is left
- * untouched and the clock should be considered unset. */
-bool rtc_read_time(rtc_time_t *out);
+/* Read the current wall time. Returns false until the clock has been seeded from
+ * a valid PCF8563 (caller should show an "unset" placeholder in that case). */
+bool rtc_get_time(rtc_time_t *out);
 
-/* Read the raw RTC registers. Returns false only on a bus NACK (no device).
- * Unlike rtc_read_time(), this does NOT reject on the VL flag or out-of-range
- * fields -- *out reflects exactly what the chip holds. Useful for debugging /
- * for surfacing an unset RTC instead of silently hiding it. */
-bool rtc_read_raw(rtc_time_t *out);
-
-/* Set the RTC time (and clear the VL/clock-integrity flag). Returns false on a
- * bus NACK. weekday/year fields are written as given. */
+/* Set the time: persist to the PCF8563 AND set the running SN32 clock (so the
+ * display updates immediately). Returns false if the PCF write failed (i.e. the
+ * time was applied but not persisted). Blocking I2C -- call from thread context. */
 bool rtc_set_time(const rtc_time_t *t);
+
+/* Free-running count of RTC second interrupts (~seconds since rtc_init) -- cheap,
+ * no calendar conversion. For once-per-second edge detection (e.g. pacing the
+ * display refresh). NOT wall time; use rtc_get_time() for that. */
+uint32_t rtc_get_seconds(void);
+
+/* Per-housekeeping tick: retries the initial seed until it takes and runs the
+ * auto-calibration pass when one is due. Cheap no-op otherwise. Call every
+ * housekeeping pass from thread context. */
+void rtc_task(void);

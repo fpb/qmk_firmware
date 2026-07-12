@@ -1,129 +1,359 @@
+// rtc.c
 // Copyright 2026 Fernando Birra
 // SPDX-License-Identifier: GPL-2.0-or-later
-
-// PCF8563 driver for the AK820Pro's external RTC (CHMC D8563F, a PCF8563 clone)
-// wired to P0.14 (SCL) and P0.15 (SDA) -- pins the SN32F290 hardware I2C
-// peripheral cannot reach (see datasheet PFPA_I2C). This variant drives them via
-// ChibiOS's software (bit-banged) I2C fallback LLD (USE_HAL_I2C_FALLBACK=yes in
-// rules.mk) through the standard I2C HAL API.
-//
-// REQUIRES the local patch in ./fix.diff applied to the vendored fallback driver
-// (lib/chibios-contrib/os/hal/lib/fallback/I2C/hal_i2c_lld.c). The stock driver
-// does NOT work on this board: in OPENDRAIN=FALSE mode it releases SCL to input
-// each clock, and the SN32 reads a just-driven-then-released SCL as low, so every
-// transfer times out. The patch keeps SCL push-pull throughout (no clock-stretch,
-// which the PCF8563 never uses), idles the pins in i2c_lld_start, and cleans up
-// the SDA read/release ordering. With the patch this reads/sets the RTC reliably.
-// The zero-dependency alternative is the hand-rolled bit-bang on ak820pro-rgbless.
 
 #include "rtc.h"
 #include "quantum.h"
 #include "hal.h"
 
+#include <time.h>
+
+
 #ifndef RTC_SCL_PIN
 #    define RTC_SCL_PIN A14
 #endif
+
 #ifndef RTC_SDA_PIN
 #    define RTC_SDA_PIN A15
 #endif
 
-// Per-transaction timeout. A whole read/write is only a few dozen bit-times, so
-// 20 ms is generous even at the slow software clock.
-#define RTC_I2C_TIMEOUT TIME_MS2I(20)
 
-#define PCF8563_ADDR           0x51 // 7-bit
-#define PCF8563_REG_VL_SECONDS 0x02 // first time register
-#define PCF8563_VL_FLAG        0x80 // bit7 of seconds: clock-integrity lost
+#define PCF8563_ADDR            0x51
+#define PCF8563_REG_SECONDS     0x02
+#define PCF8563_VL_FLAG         0x80
+#define PCF8563_I2C_TIMEOUT     TIME_MS2I(20)
 
-// Custom half-bit delay: a non-yielding busy-wait of RTC_I2C_DELAY_NOPS nops
-// (SW_I2C_USE_OSAL_DELAY == FALSE). Keeps the transfer atomic and lets us tune
-// the bit-rate directly in CPU cycles.
-#ifndef RTC_I2C_DELAY_NOPS
-#    define RTC_I2C_DELAY_NOPS 15
+
+#ifndef PCF8563_I2C_DELAY_NOPS
+#    define PCF8563_I2C_DELAY_NOPS 15
 #endif
 
-static void rtc_i2c_delay(void) {
+
+static void rtc_i2c_delay(void)
+{
     chSysLock();
-    for (volatile uint32_t i = 0; i < RTC_I2C_DELAY_NOPS; i++) {
+
+    for (volatile uint32_t i = 0;
+         i < PCF8563_I2C_DELAY_NOPS;
+         i++) {
         __asm__ volatile("nop");
     }
+
     chSysUnlock();
 }
+
 
 static const I2CConfig i2ccfg = {
     .addr10 = false,
     .scl    = RTC_SCL_PIN,
     .sda    = RTC_SDA_PIN,
-    .delay  = rtc_i2c_delay, // SW_I2C_USE_OSAL_DELAY == FALSE -> external delay fn
+    .delay  = rtc_i2c_delay,
 };
 
-static inline uint8_t bcd2dec(uint8_t v) { return (uint8_t)((v >> 4) * 10 + (v & 0x0F)); }
-static inline uint8_t dec2bcd(uint8_t v) { return (uint8_t)(((v / 10) << 4) | (v % 10)); }
 
-void rtc_init(void) {
-    // Called from keyboard_post_init_kb (kernel already running, so the
-    // osal-delay in the SW driver is safe).
-    i2cStart(&I2CD1, &i2ccfg);
+
+static inline uint8_t bcd2dec(uint8_t v)
+{
+    return (uint8_t)(((v >> 4) * 10) + (v & 0x0F));
 }
 
-// Low-level: read the 7 time registers in a single write-then-read transaction
-// (register pointer, repeated start, burst read). Returns false on a bus error
-// (no device / wiring fault). On success *out holds the decoded fields and *vl
-// (if non-NULL) reflects the VL clock-integrity flag.
-static bool rtc_read_regs(rtc_time_t *out, bool *vl) {
-    uint8_t reg = PCF8563_REG_VL_SECONDS;
+
+static inline uint8_t dec2bcd(uint8_t v)
+{
+    return (uint8_t)(((v / 10) << 4) | (v % 10));
+}
+
+
+/*
+ * ============================================================================
+ * PCF8563 reference RTC
+ * ============================================================================
+ */
+
+
+static bool pcf_read(rtc_time_t *out)
+{
+    uint8_t reg = PCF8563_REG_SECONDS;
     uint8_t buf[7];
 
-    if (i2cMasterTransmitTimeout(&I2CD1, PCF8563_ADDR, &reg, 1, buf, sizeof(buf),
-                                 RTC_I2C_TIMEOUT) != MSG_OK) {
+
+    if (i2cMasterTransmitTimeout(&I2CD1,
+                                 PCF8563_ADDR,
+                                 &reg,
+                                 1,
+                                 buf,
+                                 sizeof(buf),
+                                 PCF8563_I2C_TIMEOUT) != MSG_OK) {
         return false;
     }
 
-    if (vl) *vl = (buf[0] & PCF8563_VL_FLAG) != 0;
+
+    if (buf[0] & PCF8563_VL_FLAG) {
+        return false;
+    }
+
+
     out->seconds = bcd2dec(buf[0] & 0x7F);
     out->minutes = bcd2dec(buf[1] & 0x7F);
     out->hours   = bcd2dec(buf[2] & 0x3F);
     out->day     = bcd2dec(buf[3] & 0x3F);
-    out->weekday = (uint8_t)(buf[4] & 0x07);
+    out->weekday = buf[4] & 0x07;
     out->month   = bcd2dec(buf[5] & 0x1F);
-    out->year    = (uint16_t)(2000 + bcd2dec(buf[6]));
-    return true;
-}
+    out->year    = 2000U + bcd2dec(buf[6]);
 
-bool rtc_read_raw(rtc_time_t *out) {
-    return rtc_read_regs(out, NULL);
-}
 
-bool rtc_read_time(rtc_time_t *out) {
-    rtc_time_t t;
-    bool       vl = false;
-    if (!rtc_read_regs(&t, &vl)) return false; // bus error -> no device
-    if (vl) return false;                       // clock integrity lost -> unset
-
-    // Reject implausible reads (bad BCD or a flaky bus) so the caller keeps its
-    // previous time / uptime fallback instead of seeding garbage.
-    if (t.seconds > 59 || t.minutes > 59 || t.hours > 23 ||
-        t.day < 1 || t.day > 31 || t.month < 1 || t.month > 12) {
+    if (out->seconds > 59 ||
+        out->minutes > 59 ||
+        out->hours > 23 ||
+        out->day < 1 ||
+        out->day > 31 ||
+        out->month < 1 ||
+        out->month > 12) {
         return false;
     }
 
-    *out = t;
+
     return true;
 }
 
-bool rtc_set_time(const rtc_time_t *t) {
-    // Register pointer followed by the 7 time bytes in one write. Writing seconds
-    // with bit7 = 0 also clears the VL flag.
+
+
+static bool pcf_write(const rtc_time_t *t)
+{
     uint8_t buf[8] = {
-        PCF8563_REG_VL_SECONDS,
-        (uint8_t)(dec2bcd(t->seconds) & 0x7F),
+        PCF8563_REG_SECONDS,
+        dec2bcd(t->seconds),
         dec2bcd(t->minutes),
         dec2bcd(t->hours),
         dec2bcd(t->day),
-        (uint8_t)(t->weekday & 0x07),
+        t->weekday & 0x07,
         dec2bcd(t->month),
         dec2bcd((uint8_t)(t->year % 100)),
     };
-    return i2cMasterTransmitTimeout(&I2CD1, PCF8563_ADDR, buf, sizeof(buf),
-                                    NULL, 0, RTC_I2C_TIMEOUT) == MSG_OK;
+
+
+    return i2cMasterTransmitTimeout(&I2CD1,
+                                    PCF8563_ADDR,
+                                    buf,
+                                    sizeof(buf),
+                                    NULL,
+                                    0,
+                                    PCF8563_I2C_TIMEOUT) == MSG_OK;
+}
+
+
+
+/*
+ * ============================================================================
+ * ChibiOS RTC conversion helpers
+ * ============================================================================
+ */
+
+
+static void rtc_to_chibiostime(const rtc_time_t *src,
+                               RTCDateTime *dst)
+{
+    dst->year = src->year - RTC_BASE_YEAR;
+    dst->month = src->month;
+    dst->day = src->day;
+    dst->dayofweek = src->weekday;
+    dst->dstflag = 0;
+
+
+    dst->millisecond =
+        ((uint32_t)src->hours * 3600UL +
+         (uint32_t)src->minutes * 60UL +
+         src->seconds) * 1000UL;
+}
+
+
+
+static void chibiostime_to_rtc(const RTCDateTime *src,
+                               rtc_time_t *dst)
+{
+    dst->year = src->year + RTC_BASE_YEAR;
+    dst->month = src->month;
+    dst->day = src->day;
+    dst->weekday = src->dayofweek;
+
+
+    dst->hours =
+        (uint8_t)(src->millisecond / 3600000UL);
+
+    dst->minutes =
+        (uint8_t)((src->millisecond / 60000UL) % 60);
+
+    dst->seconds =
+        (uint8_t)((src->millisecond / 1000UL) % 60);
+}
+
+
+/*
+ * ============================================================================
+ * Synchronization
+ * ============================================================================
+ */
+
+
+static bool rtc_valid;
+
+
+#ifdef RTC_AUTO_CALIBRATION
+
+#ifndef RTC_CHECK_INTERVAL_S
+#    define RTC_CHECK_INTERVAL_S 3600
+#endif
+
+
+#ifndef RTC_DRIFT_THRESHOLD_S
+#    define RTC_DRIFT_THRESHOLD_S 2
+#endif
+
+static volatile uint32_t rtc_check_seconds;
+
+#endif
+
+
+
+// Free-running count of RTC second interrupts (~seconds since rtc_init). A cheap
+// once-per-second edge source (no localtime()) for pacing the display refresh.
+static volatile uint32_t rtc_seconds_count = 0;
+
+static void rtc_second_cb(RTCDriver *rtcp, rtcevent_t event)
+{
+    (void)rtcp;
+    (void)event;
+
+    rtc_seconds_count++;
+
+#ifdef RTC_AUTO_CALIBRATION
+    rtc_check_seconds = MIN(rtc_check_seconds + 1, RTC_CHECK_INTERVAL_S);
+#endif
+}
+
+uint32_t rtc_get_seconds(void) {
+    return rtc_seconds_count;
+}
+
+
+static void rtc_seed_from_pcf(void)
+{
+    rtc_time_t pcf;
+    RTCDateTime dt;
+
+    if (!pcf_read(&pcf)) {
+        return;
+    }
+
+    rtc_to_chibiostime(&pcf, &dt);
+    rtcSetTime(&RTCD1,&dt);
+
+    rtc_valid = true;
+}
+
+/*
+ * ============================================================================
+ * Reference check
+ * ============================================================================
+ */
+
+
+#ifdef RTC_AUTO_CALIBRATION
+
+
+static void rtc_clock_discipline(void)
+{
+    rtc_time_t reference;
+    RTCDateTime current;
+    RTCDateTime target;
+
+    /*
+     * PCF8563 is only accessed during a reference check.
+     */
+    if (!pcf_read(&reference)) {
+        return;
+    }
+
+    rtcGetTime(&RTCD1, &current);
+    rtc_to_chibiostime(&reference, &target);
+
+    struct tm ref_tm;
+    struct tm cur_tm;
+
+    rtcConvertDateTimeToStructTm(&target, &ref_tm, NULL);
+    rtcConvertDateTimeToStructTm(&current, &cur_tm, NULL);
+
+    int32_t error = (int32_t)(mktime(&ref_tm) - mktime(&cur_tm));
+
+    /*
+     * Only correct when the SN32 RTC has actually drifted.
+     */
+    if ((error > RTC_DRIFT_THRESHOLD_S) || (error < -RTC_DRIFT_THRESHOLD_S)) {
+        rtcSetTime(&RTCD1, &target);
+        printf("[rtc] corrected drift of %ld seconds\n", (long)error);
+    }
+}
+
+
+#endif
+
+/*
+ * ============================================================================
+ * Public API
+ * ============================================================================
+ */
+
+
+void rtc_init(void)
+{
+    i2cStart(&I2CD1, &i2ccfg);
+    rtcSetCallback(&RTCD1, rtc_second_cb);
+    rtc_seed_from_pcf();
+}
+
+
+
+bool rtc_get_time(rtc_time_t *out)
+{
+    RTCDateTime dt;
+
+    if (!rtc_valid) {
+        return false;
+    }
+
+    rtcGetTime(&RTCD1, &dt);
+    chibiostime_to_rtc(&dt, out);
+
+    return true;
+}
+
+
+
+bool rtc_set_time(const rtc_time_t *t)
+{
+    RTCDateTime dt;
+
+    rtc_to_chibiostime(t, &dt);
+
+    bool ok = pcf_write(t);
+
+    rtcSetTime(&RTCD1, &dt);
+    rtc_valid = true;
+
+    return ok;
+}
+
+
+
+void rtc_task(void)
+{
+#ifdef RTC_AUTO_CALIBRATION
+
+    if (rtc_check_seconds < RTC_CHECK_INTERVAL_S) {
+        return;
+    }
+
+    rtc_check_seconds = 0;
+    rtc_clock_discipline();
+#endif
 }

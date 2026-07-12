@@ -19,7 +19,7 @@
         "audio": false,
         "backlight": false,
         "bootmagic": true,
-        "command": false,
+        "command": true,
         "console": true,
         "extrakey": true,
         "mousekey": false,
@@ -45,9 +45,10 @@
             "cycle_up_down": true,
             "rainbow_moving_chevron": true,
             "cycle_pinwheel": true,
-            "jellybean_raindrops": true
+            "jellybean_raindrops": true,
+            "typing_heatmap": true
         },
-        "default": { "animation": "cycle_left_right" },
+        "default": { "animation": "solid_color" },
         "layout": [
             { "flags": 4, "matrix": [0, 0], "x": 7, "y": 5 },
             { "flags": 4, "matrix": [0, 1], "x": 24, "y": 5 },

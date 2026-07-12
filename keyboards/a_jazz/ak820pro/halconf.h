@@ -6,6 +6,7 @@
 #define HAL_USE_PAL TRUE
 #define HAL_USE_SPI TRUE
 #define HAL_USE_SERIAL TRUE
+#define HAL_USE_RTC TRUE
 
 // RGB matrix: hardware PWM across the SN32 CT16B0/B1/B2 timers.
 // See drivers/led/sn32f2xx.c F290 block + hardware_pwm.diff.

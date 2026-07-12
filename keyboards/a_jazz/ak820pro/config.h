@@ -43,6 +43,16 @@
 
 #define CH582_SERIAL_DRIVER SD2
 
+/* The LCD clock is seeded once from the external PCF8563 (I2C), then advanced by
+ * the SN32 internal RTC's per-second interrupt (rtc.c). RTC_TICK_SECCNTV (rtc.c)
+ * sets the nominal 1 Hz divider. */
+
+/* Auto-calibration: periodically read the PCF8563 (crystal) and discipline the
+ * SN32 RTC to it -- snap the phase and trim the divider so the clock self-locks
+ * on any hardware (no hardcoded SECCNTV) and tracks temperature drift. Costs one
+ * I2C read per RTC_CAL_INTERVAL_S (~1/min). Comment out to free-run the RTC. */
+#define RTC_AUTO_CALIBRATION
+
 /* NO_USB_STARTUP_CHECK is enabled automatically by BLUETOOTH_ENABLE (custom
  * driver); it keeps the main loop (matrix scan + key processing) running when
  * USB is suspended/unplugged so wireless typing works on battery. */
@@ -63,3 +73,6 @@
 #define QUANTUM_PAINTER_SUPPORTS_NATIVE_COLORS TRUE
 #define QUANTUM_PAINTER_SUPPORTS_256_PALETTE TRUE
 #define QUANTUM_PAINTER_DISPLAY_TIMEOUT 0
+
+#define DEBUG_MATRIX_SCAN_RATE
+#define DISPLAY_CLOCK_SHOW_SECONDS  FALSE
