@@ -197,39 +197,44 @@ static bool rtc_apply_bytes(const uint8_t *p) {
     return rtc_set_time(&t);
 }
 
-#if defined(VIA_ENABLE)
-#    include "via.h"
+// Clock-set command framing, identical for VIA and non-VIA builds so the host
+// set-clock utility speaks ONE protocol. It's VIA's custom-value layout:
+//   [SET_VALUE, RTC_CHANNEL, RTC_SET_TIME, year-2000, month, day, weekday,
+//    hour, min, sec]
+// The reply echoes the packet: data[0] stays SET_VALUE when handled, or becomes
+// UNHANDLED (0xFF) when rejected. SET_VALUE/UNHANDLED mirror VIA's
+// id_custom_set_value / id_unhandled so the same bytes work against either build.
+enum {
+    RTC_SET_VALUE = 0x07, // == VIA id_custom_set_value
+    RTC_UNHANDLED = 0xFF, // == VIA id_unhandled
+    RTC_CHANNEL   = 0x10,
+    RTC_SET_TIME  = 0x01,
+};
 
-// With VIA enabled, VIA owns raw_hid_receive(), so the set-clock command moves to
-// VIA's custom-value channel. The host sends an id_custom_set_value packet:
-//   [id_custom_set_value, RTC_CHANNEL, RTC_SET_TIME, year-2000, month, day,
-//    weekday, hour, min, sec]
-// VIA echoes the buffer back automatically -- do NOT call raw_hid_send() here.
-enum { RTC_CHANNEL = 0x10, RTC_SET_TIME = 0x01 };
-
-void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
-    uint8_t command_id = data[0];
-    uint8_t channel_id = data[1];
-    uint8_t value_id   = data[2];
-    if (channel_id == RTC_CHANNEL && command_id == id_custom_set_value &&
-        value_id == RTC_SET_TIME && length >= 10) {
-        rtc_apply_bytes(&data[3]);
-        return;
-    }
-    *data = id_unhandled; // not ours -> let VIA report "unhandled"
+static inline bool rtc_is_set_time_cmd(const uint8_t *data, uint8_t length) {
+    return length >= 10 && data[0] == RTC_SET_VALUE &&
+           data[1] == RTC_CHANNEL && data[2] == RTC_SET_TIME;
 }
 
-#else // classic bespoke raw HID (non-VIA builds): the set-clock utility talks here
+#if defined(VIA_ENABLE)
 
-// Report layout (32 bytes, no report ID on the wire):
-//   [0]=command (0x01 = set time), then [1]=year-2000 [2]=month [3]=day
-//   [4]=weekday [5]=hour [6]=min [7]=sec. We reply in-place: [1] becomes a status
-//   byte (0x00 OK, 0xFF write failed, 0xFE unknown command) and echo the buffer.
+// VIA owns raw_hid_receive() and dispatches custom-value commands here. VIA echoes
+// the buffer back itself -- do NOT call raw_hid_send().
+void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
+    if (rtc_is_set_time_cmd(data, length)) {
+        rtc_apply_bytes(&data[3]); // leave data[0] = SET_VALUE -> "handled"
+        return;
+    }
+    data[0] = RTC_UNHANDLED;
+}
+
+#else // no VIA: handle the same packet directly and echo it back like VIA would.
+
 void raw_hid_receive(uint8_t *data, uint8_t length) {
-    if (length >= 8 && data[0] == 0x01) {
-        data[1] = rtc_apply_bytes(&data[1]) ? 0x00 : 0xFF;
+    if (rtc_is_set_time_cmd(data, length)) {
+        rtc_apply_bytes(&data[3]);
     } else {
-        data[1] = 0xFE;
+        data[0] = RTC_UNHANDLED;
     }
     raw_hid_send(data, length);
 }
