@@ -121,6 +121,20 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         case SCR_TOG:
             if (record->event.pressed) display_toggle_power();
             return false;
+#ifdef RGB_MATRIX_ENABLE
+        // VIA-assignable RGB-matrix controls (see ak820pro.h). One step per press.
+        case RGBM_TOG:  if (record->event.pressed) rgb_matrix_toggle();         return false;
+        case RGBM_MOD:  if (record->event.pressed) rgb_matrix_step();           return false;
+        case RGBM_RMOD: if (record->event.pressed) rgb_matrix_step_reverse();   return false;
+        case RGBM_HUI:  if (record->event.pressed) rgb_matrix_increase_hue();   return false;
+        case RGBM_HUD:  if (record->event.pressed) rgb_matrix_decrease_hue();   return false;
+        case RGBM_SAI:  if (record->event.pressed) rgb_matrix_increase_sat();   return false;
+        case RGBM_SAD:  if (record->event.pressed) rgb_matrix_decrease_sat();   return false;
+        case RGBM_VAI:  if (record->event.pressed) rgb_matrix_increase_val();   return false;
+        case RGBM_VAD:  if (record->event.pressed) rgb_matrix_decrease_val();   return false;
+        case RGBM_SPI:  if (record->event.pressed) rgb_matrix_increase_speed(); return false;
+        case RGBM_SPD:  if (record->event.pressed) rgb_matrix_decrease_speed(); return false;
+#endif
         case BT1:  // Fn+Q -> select BT slot 1 (BT mode only)
             if (record->event.pressed && wireless_mode == WL_MODE_BT) {
                 ch582_set_profile(CH582_PROFILE_BT_1);
