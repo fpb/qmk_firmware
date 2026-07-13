@@ -166,32 +166,61 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     }
 }
 
-// Raw HID: host -> keyboard command channel (used by set-clock utility to set the
-// RTC). Report layout (32 bytes, no report ID on the wire):
-//   [0]=command, then for 0x01 (set time):
-//   [1]=year-2000 [2]=month [3]=day [4]=weekday [5]=hour [6]=min [7]=sec
-// We reply in-place: [1] becomes a status byte (0x00 OK, 0xFF write failed,
-// 0xFE unknown command) and echo the buffer back.
+// Apply a 7-byte time payload to the RTC:
+//   [0]=year-2000 [1]=month [2]=day [3]=weekday [4]=hour [5]=min [6]=sec
+// Sets both the PCF8563 (persist) and the live SN32 clock; the display picks it up
+// within a second via rtc_get_time(). Returns the PCF (persistence) write status.
+static bool rtc_apply_bytes(const uint8_t *p) {
+    rtc_time_t t = {
+        .year    = (uint16_t)(2000 + p[0]),
+        .month   = p[1],
+        .day     = p[2],
+        .weekday = p[3],
+        .hours   = p[4],
+        .minutes = p[5],
+        .seconds = p[6],
+    };
+    return rtc_set_time(&t);
+}
+
+#if defined(VIA_ENABLE)
+#    include "via.h"
+
+// With VIA enabled, VIA owns raw_hid_receive(), so the set-clock command moves to
+// VIA's custom-value channel. The host sends an id_custom_set_value packet:
+//   [id_custom_set_value, RTC_CHANNEL, RTC_SET_TIME, year-2000, month, day,
+//    weekday, hour, min, sec]
+// VIA echoes the buffer back automatically -- do NOT call raw_hid_send() here.
+enum { RTC_CHANNEL = 0x10, RTC_SET_TIME = 0x01 };
+
+void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
+    uint8_t command_id = data[0];
+    uint8_t channel_id = data[1];
+    uint8_t value_id   = data[2];
+    if (channel_id == RTC_CHANNEL && command_id == id_custom_set_value &&
+        value_id == RTC_SET_TIME && length >= 10) {
+        rtc_apply_bytes(&data[3]);
+        return;
+    }
+    *data = id_unhandled; // not ours -> let VIA report "unhandled"
+}
+
+#else // classic bespoke raw HID (non-VIA builds): the set-clock utility talks here
+
+// Report layout (32 bytes, no report ID on the wire):
+//   [0]=command (0x01 = set time), then [1]=year-2000 [2]=month [3]=day
+//   [4]=weekday [5]=hour [6]=min [7]=sec. We reply in-place: [1] becomes a status
+//   byte (0x00 OK, 0xFF write failed, 0xFE unknown command) and echo the buffer.
 void raw_hid_receive(uint8_t *data, uint8_t length) {
     if (length >= 8 && data[0] == 0x01) {
-        rtc_time_t t = {
-            .seconds = data[7],
-            .minutes = data[6],
-            .hours   = data[5],
-            .day     = data[3],
-            .weekday = data[4],
-            .month   = data[2],
-            .year    = (uint16_t)(2000 + data[1]),
-        };
-        // Sets both the PCF8563 (persist) and the live SN32 clock; the display
-        // picks it up within a second via rtc_get_time(). Status reflects the
-        // PCF (persistence) write.
-        data[1] = rtc_set_time(&t) ? 0x00 : 0xFF;
+        data[1] = rtc_apply_bytes(&data[1]) ? 0x00 : 0xFF;
     } else {
         data[1] = 0xFE;
     }
     raw_hid_send(data, length);
 }
+
+#endif
 
 
 static void update_leds(void) {

@@ -9,7 +9,7 @@
         "device_version": "1.0.0"
     },
     "dynamic_keymap": {
-        "layer_count": 5
+        "layer_count": 4
     },
     "indicators": {
         "caps_lock": "D15",
