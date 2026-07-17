@@ -12,7 +12,7 @@
 // Height: 24
 // Single frame
 
-#include <qp.h>
+#include <stdint.h>
 
 const uint32_t gfx_cable_icon_24x24_length = 410;
 

@@ -31,5 +31,6 @@ enum ak820pro_keycodes {
     RGBM_VAD,              // brightness -
     RGBM_SPI,              // speed +
     RGBM_SPD,              // speed -
+    ANIM_TOG,              // toggle the flash-animation player
     AK820PRO_SAFE_RANGE
 };

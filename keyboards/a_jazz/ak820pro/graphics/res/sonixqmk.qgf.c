@@ -12,7 +12,7 @@
 // Height: 128
 // Single frame
 
-#include <qp.h>
+#include <stdint.h>
 
 const uint32_t gfx_sonixqmk_length = 8613;
 

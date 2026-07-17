@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <qp.h>
+#include <stdint.h>
 
 extern const uint32_t font_Iosevka_Medium_20_length;
 extern const uint8_t  font_Iosevka_Medium_20[2415];

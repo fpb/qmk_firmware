@@ -7,6 +7,7 @@
 #include "connection.h"
 
 #include "graphics/display.h"
+#include "graphics/lcd_bus.h"
 #include "bluetooth/ch582f_ajazz.h"
 #include "rtc/rtc.h"
 #include "raw_hid.h"
@@ -28,11 +29,12 @@ static uint16_t bt_pair_timer = 0;
 static bool     bt_pair_armed = false;
 
 void early_hardware_init_post(void) {
-    // Configure SPI0 pins for the LCD panel
+    // Configure SPI0 pins for the LCD panel. SEL0 is left UNMUXED: our bare-metal bus
+    // (graphics/lcd_bus.c) drives CS (B8) as a plain GPIO and must hold it low across
+    // a whole DMA frame, so B8 must be free of the SPI SEL function.
     SN_PFPA->SPI_b.MISO0 = 0b11;
     SN_PFPA->SPI_b.MOSI0 = 0b11;
     SN_PFPA->SPI_b.SCK0  = 0b11;
-    SN_PFPA->SPI_b.SEL0  = 0b10;
 
     // Configure UART2 pins for the CH582F wireless module
     SN_PFPA->UART_b.UTXD2 = 0b11;
@@ -120,6 +122,9 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
         case SCR_TOG:
             if (record->event.pressed) display_toggle_power();
+            return false;
+        case ANIM_TOG:
+            if (record->event.pressed) anim_toggle();
             return false;
 #ifdef RGB_MATRIX_ENABLE
         // VIA-assignable RGB-matrix controls (see ak820pro.h). One step per press.
@@ -271,7 +276,8 @@ void housekeeping_task_kb(void) {
         last_t = timer_read32();
 
         update_leds();
-        rtc_task();
+        if (!anim_active()) rtc_task();   // RTC I2C (port A) glitches the flash SPI1 pins (A12/A13) mid-DMA
+        anim_task();
         display_housekeeping_task();
     }
 

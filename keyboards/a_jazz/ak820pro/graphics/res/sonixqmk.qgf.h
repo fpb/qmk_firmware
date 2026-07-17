@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <qp.h>
+#include <stdint.h>
 
 extern const uint32_t gfx_sonixqmk_length;
 extern const uint8_t  gfx_sonixqmk[8613];

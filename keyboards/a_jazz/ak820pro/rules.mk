@@ -1,5 +1,8 @@
-QUANTUM_PAINTER_ENABLE = yes
-QUANTUM_PAINTER_DRIVERS += gc9107_spi
+# The GC9107 panel + dashboard are driven entirely bare-metal (graphics/lcd_bus.c):
+# we own SPI0 (+ Vector58) for the interrupt-driven flash->LCD DMA, and decode QP's
+# qgf/qff asset blobs ourselves. No Quantum Painter runtime -- its concurrent main-loop
+# activity corrupted the background DMA. See docs/LCD_FLASH_LAYER.md.
+SRC   += graphics/lcd_bus.c
 
 # CH582F wireless module exposed through QMK's official Bluetooth driver API.
 # BLUETOOTH_DRIVER = custom defines BLUETOOTH_ENABLE, CONNECTION_ENABLE and
