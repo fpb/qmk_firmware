@@ -31,7 +31,6 @@
 
 static void rtc_i2c_delay(void)
 {
-    chSysLock();
 
     for (volatile uint32_t i = 0;
          i < PCF8563_I2C_DELAY_NOPS;
@@ -39,7 +38,6 @@ static void rtc_i2c_delay(void)
         __asm__ volatile("nop");
     }
 
-    chSysUnlock();
 }
 
 
