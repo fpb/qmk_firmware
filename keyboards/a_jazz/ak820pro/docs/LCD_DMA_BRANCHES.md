@@ -51,8 +51,22 @@ dip on the one full dashboard redraw when toggling the animation OFF; this is dr
 **not** the SPI clock — divisor 2 already maps to clkdiv 0 = 24 MHz). Carries **two** out-of-tree
 patches (LLD hook + QP macro), both opt-in / harmless when their macros are undefined.
 
+### 4. `ak820pro-flashlcd-tiles` — Stage C: everything is a pre-rendered tile
+Branched from `ak820pro-flashlcd` and takes it one step further: the qgf/qff **decoders are gone
+too**. Every visual — icons, splash, glyphs — is a pre-rendered RGB565 tile blitted straight to
+the panel, so the firmware does no decoding at all (no block walk, no byte-RLE, no HSV palette,
+no `lerp565`). Text is one tile blit per character out of a monospace atlas, indexed by
+`strchr(charset, c)`. Assets are generated from the source PNGs by `res/mkraw.py` (see
+`LCD_FLASH_LAYER.md`), and `lcd_draw_text()` consequently has no fg/bg arguments — colours are
+baked into the tiles. Also adds the **pipelined bulk writer** (keeps the TX FIFO full instead of
+`tx8()`'s per-byte RX round-trip) and generalises `lcd_blit_flash` to an arbitrary rect.
+Firmware 131KB of 256KB. This is the branch positioned for Stage D (assets in flash + DMA),
+since the tile format is already exactly what the DMA streams.
+
 ## Choosing
 - **Ship / simplest** → `ak820pro-flashlcd`. No QP, no patches, non-blocking animation.
+- **Leanest + headed for flash** → `ak820pro-flashlcd-tiles`. No QP *and* no decoders; the
+  asset pipeline is already in the DMA's native format.
 - **Want QP + best performance** → `ak820pro-flashlcd-qp`. Deterministic gate, no external
   patches; cost is coupling to QP internals.
 - **Want QP "as-provided" / minimal QP-side custom code** → `ak820pro-flashlcd-qp-lld`. Stock

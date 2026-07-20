@@ -5,6 +5,10 @@
 > branches — see `docs/LCD_DMA_BRANCHES.md` for the branch-by-branch comparison. This file is
 > now the **forward** roadmap (what's left) plus the design rationale, corrected for what we
 > actually learned. Superseded predictions are called out inline.
+>
+> **Stage C is also DONE** on `ak820pro-flashlcd-tiles`: the dashboard runs entirely on
+> pre-rendered RGB565 tiles and the QGF/QFF decoders are gone. Only Stage D (moving assets into
+> flash) remains.
 
 ## Vision (refined)
 Drive as much of the LCD as possible from pre-rendered **RGB565 tiles** blitted with minimal
@@ -20,10 +24,15 @@ these SN32F2 parts have no general memory→peripheral DMA. Consequence:
 - **RAM-resident content (static images, glyphs)** → **CPU-pushed** (pipelined `tx_bulk`), *not*
   DMA. Fast enough (a full 128×128 push ≈ 11 ms once; partial digit updates are sub-ms).
 
-This is the current design decision: **keep static assets in MCU firmware as RAM arrays and
-CPU-draw them; keep only animations in external flash + DMA.** It deliberately avoids building a
-flash-provisioning toolchain (flash-write routines + host uploader + asset map) — the expensive
-part — since nothing new has to be written to external flash.
+**Interim decision (Stage C, shipped):** static assets live in MCU firmware as RAM arrays and are
+CPU-drawn; only animations are in external flash + DMA. This got the whole dashboard onto tiles
+without needing a flash-provisioning toolchain.
+
+**Endgame (Stage D):** move the assets into flash so they are DMA-drawn too. That is why *every*
+asset is already RGB565 in `res/raw/` — the format the DMA and panel require — so the move is a
+relocation, not a reformat. What it still costs is the provisioning toolchain: a flash **write**
+path on SPI1 plus a host uploader. RAM-drawn static content stays available for anything small or
+frequently recoloured.
 
 ## What's already true (foundation, done)
 - **Bare-metal LCD bus** (`graphics/lcd_bus.c`): SPI0 bring-up, SPI1 (flash), `lcd_window`,
@@ -54,36 +63,55 @@ part — since nothing new has to be written to external flash.
 ```c
 // DMA — flash-resident content (animation frames, and any flash tiles). Non-blocking:
 // arms the SPI1->SPI0 engine, returns immediately, completion via IRQ/flag.
-void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h);   // TODO: generalise
+void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h);   // DONE
 
 // CPU — RAM-resident content (static images, glyph tiles). Pipelined tx_bulk (FIFO kept full),
 // blocking but fast; use partial rects to keep it sub-ms.
-void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h);  // TODO
+void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h);  // DONE
 ```
-Today's animation uses the full-frame form of the flash blit; generalising to an arbitrary rect
-is small (`DMACNT = w*h*2 - 1`, window `(x, y, x+w-1, y+h-1)`, arbitrary `src`). `lcd_blit_ram`
-is a thin wrapper over `lcd_window` + `tx_bulk` from a RAM pointer.
+Both exist as of Stage C. The flash blit takes an arbitrary rect (`DMACNT = w*h*2 - 1`, window
+`(x, y, x+w-1, y+h-1)`, arbitrary `src`); the animation is simply its full-frame case.
+`lcd_blit_ram` is a thin wrapper over `lcd_window` + the pipelined bulk writer.
 
-## Remaining work (additive, no refactor)
-- **`lcd_blit_ram(px,x,y,w,h)`** — the CPU tile blit for static content.
-- **Migrate the dashboard off QP** onto `lcd_blit_ram` + `lcd_fill_rect`, incrementally, keeping
-  the qgf/qff decoders as a fallback until each asset is a RAM tile. Then delete QP + decoders.
-- **Fixed-size glyph atlas in RAM** — equal-size RGB565 tiles; `lcd_draw_char(c,x,y)` indexes the
-  atlas → `lcd_blit_ram`; `lcd_draw_text` advances x by tile width. Colors are baked into the
-  tiles (DMA/CPU-blit can't recolor/alpha-blend); a second color = a second atlas.
-- **(Optional, deferred) flash asset index + provisioning** — only if you later decide some
-  *large* static images should live in flash + DMA after all. That reintroduces the flash-write
-  toolchain (WREN/erase/page-program on SPI1 + a raw-HID uploader + an id→addr,w,h table). Kept
-  out of scope by the RAM-images decision above.
+## The asset pipeline (branch `ak820pro-flashlcd-tiles`)
+`PNG -> raw RGB565 -> tile -> panel`, with **no decode step anywhere in the firmware**.
+
+- `res/mkraw.py` decodes the source PNGs (stdlib `zlib` only — no Pillow/ImageMagick here) into
+  flat `res/raw/*.raw` + `manifest.json` recording dimensions/format/stride/size.
+- **Everything is RGB565**, hi-byte-first (panel order), alpha composited over black. This is
+  deliberate: the DMA can only *stream raw pixels* — it cannot expand 1bpp or blend fg/bg — so
+  the on-flash bytes must already be what the panel consumes. Keeping the firmware-embedded step
+  in the same format makes the eventual flash move a **pure relocation, not a reformat**.
+- Font atlases are **self-describing**: a magenta `(255,0,255)` marker sits at each glyph cell's
+  top-left corner, so marker spacing IS the advance and marker count IS the glyph count.
+  `font_metrics()` derives the grid from them instead of hardcoding it. Markers pack as
+  background. (Regular-30: 95 glyphs @ 15x34; Medium-20: 95 @ 10x23, first char 0x20.)
+- `mkraw.py --embed` generates `res/lcd_assets.c/.h` for the **interim** firmware-embedded stage.
+  The full atlases (97KB + 44KB) can't fit alongside firmware in 256KB, so fonts are **subset**
+  to `EMBED_CHARSET` (`0123456789:/%`). The full atlases stay in `raw/` for flash; subsetting is
+  purely an embed-time concern and disappears once assets live in flash.
+- Glyph colours are consequently **baked** — free here, since the dashboard is uniformly
+  `COL_FG 0xFFFF` on `COL_BG 0x0000`. A second colour would mean a second atlas.
+
+> **Gotcha:** `EMBED_CHARSET` is deliberately tight. Any dashboard text using characters outside
+> it silently draws nothing — widen the charset and regenerate.
+
+## Remaining work
+- **Stage D: flash provisioning.** Write the `raw/*.raw` bytes to external flash, add an asset
+  index (id -> addr, w, h), and swap `lcd_blit_ram` for the already-generalised `lcd_blit_flash`.
+  Needs the flash **write** path (WREN / sector erase / page program / poll WIP on SPI1) plus a
+  host uploader (extending the existing raw-HID channel). The `--embed` step then goes away.
 
 ## Staged plan (updated)
 - **Stage A — DONE.** Bare-metal `lcd_bus` (SPI0 + IRQ + SPI1), pipelined `tx_bulk`, fills,
   full-frame flash DMA, animation player.
 - **Stage B — DONE.** Dashboard coexists with the DMA (three branches; see comparison doc).
-- **Stage C — NEXT.** `lcd_blit_ram` + generalise `lcd_blit_flash` to a rect; move the dashboard
-  onto RAM tiles + a fixed-size glyph atlas; drop QP and the qgf/qff decoders.
-- **Stage D — deferred/optional.** Flash-resident static images + provisioning toolchain, only
-  if RAM/firmware size ever forces it.
+- **Stage C — DONE** (`ak820pro-flashlcd-tiles`). Pipelined bulk writer; `lcd_blit_ram` +
+  `lcd_blit_flash` generalised to a rect; the whole dashboard moved onto pre-rendered RGB565
+  tiles; **QGF and QFF decoders deleted** (~110 lines: block walk, byte-RLE, HSV palette, glyph
+  offset table, `lerp565`). `lcd_draw_text()` lost its fg/bg args. Firmware 131KB of 256KB.
+- **Stage D — NEXT/optional.** Flash-resident assets + provisioning toolchain (above). Only the
+  animation lives in flash today.
 
 ## Performance note (concrete, measured)
 - Our **pipelined `tx_bulk`** streams at ~wire speed (24 MHz, ~3 MB/s) — a full frame ~13 ms.
