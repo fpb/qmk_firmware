@@ -20,14 +20,8 @@ SRC += bluetooth/ch582f_ajazz.c
 
 # Dashboard graphics: splash, big clock font (Iosevka 30), small status font
 # (Roboto Mono 20), and the top-row Mac/Win + connection icons.
-SRC += graphics/res/sonixqmk.qgf.c
-SRC += graphics/res/Iosevka-Regular-30.qff.c
-SRC += graphics/res/Iosevka-Medium-20.qff.c
-SRC += graphics/res/apple_icon_24x24.qgf.c
-SRC += graphics/res/windows_icon_24x24.qgf.c
-SRC += graphics/res/cable_icon_24x24.qgf.c
-SRC += graphics/res/bluetooth_icon_24x24.qgf.c
-SRC += graphics/res/2_4_g_icon_24x24.qgf.c
+# Generated from the source PNGs by res/mkraw.py --embed (RGB565 tiles).
+SRC += graphics/res/lcd_assets.c
 
 SRC += graphics/display.c
 SRC += rtc/rtc.c

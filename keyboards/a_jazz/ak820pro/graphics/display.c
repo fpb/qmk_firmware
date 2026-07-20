@@ -13,15 +13,7 @@
 #include "gpio.h"
 #include "rtc/rtc.h"
 
-#include "res/sonixqmk.qgf.h"
-#include "res/Iosevka-Regular-30.qff.h"
-#include "res/Iosevka-Medium-20.qff.h"
 
-#include "res/apple_icon_24x24.qgf.h"
-#include "res/windows_icon_24x24.qgf.h"
-#include "res/cable_icon_24x24.qgf.h"
-#include "res/bluetooth_icon_24x24.qgf.h"
-#include "res/2_4_g_icon_24x24.qgf.h"
 
 #define PANEL_BKL       A16
 
@@ -32,8 +24,8 @@
 #define COL_FG          0xFFFF   // white text
 
 // Font blobs (Iosevka, mono 1bpp).
-#define FONT_CLOCK      font_Iosevka_Regular_30   // big clock
-#define FONT_STATUS     font_Iosevka_Medium_20    // small status text
+#define FONT_CLOCK      (&font_iosevka_regular_30)   // big clock
+#define FONT_STATUS     (&font_iosevka_medium_20)    // small status text
 
 // Bottom row: y position of the wireless status line.
 #define STATUS_Y 106
@@ -115,7 +107,7 @@ void draw_clock(void) {
             if (time_str[i] != last_time[i]) {
                 int16_t cx = x0 + i * cw;
                 char ch[2] = {time_str[i], 0};
-                lcd_draw_text(cx, CLOCK_Y, FONT_CLOCK, ch, COL_FG, COL_BG);
+                lcd_draw_text(cx, CLOCK_Y, FONT_CLOCK, ch);
             }
         }
         strcpy(last_time, time_str);
@@ -129,7 +121,7 @@ void draw_clock(void) {
         snprintf(date_str, sizeof(date_str), "%02u/%02u",
                  (unsigned)shown.day, (unsigned)shown.month);
         uint16_t w = lcd_text_width(FONT_STATUS, date_str);
-        lcd_draw_text(PANEL_WIDTH - 1 - w, 2, FONT_STATUS, date_str, COL_FG, COL_BG);
+        lcd_draw_text(PANEL_WIDTH - 1 - w, 2, FONT_STATUS, date_str);
     }
 
     clock_force_repaint = false; // consumed by both the time and date above
@@ -145,12 +137,12 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
     clock_force_repaint = true;
 
     // Mac/Windows icon (top-left).
-    lcd_draw_qgf(0, 0, mac_mode ? gfx_apple_icon_24x24 : gfx_windows_icon_24x24);
+    lcd_draw_image(mac_mode ? &img_apple_icon_24x24 : &img_windows_icon_24x24, 0, 0);
 
     // Connection icon.
-    if (connection_mode == CONN_MODE_WIRED)          lcd_draw_qgf(32, 0, gfx_cable_icon_24x24);
-    else if (connection_mode == CONN_MODE_BLUETOOTH) lcd_draw_qgf(32, 0, gfx_bluetooth_icon_24x24);
-    else if (connection_mode == CONN_MODE_2_4G)      lcd_draw_qgf(32, 0, gfx_2_4_g_icon_24x24);
+    if (connection_mode == CONN_MODE_WIRED)          lcd_draw_image(&img_cable_icon_24x24, 32, 0);
+    else if (connection_mode == CONN_MODE_BLUETOOTH) lcd_draw_image(&img_bluetooth_icon_24x24, 32, 0);
+    else if (connection_mode == CONN_MODE_2_4G)      lcd_draw_image(&img_2_4_g_icon_24x24, 32, 0);
 
     draw_clock();
     draw_status(true);   // battery + channel digit over the cleared screen
@@ -163,7 +155,7 @@ bool display_init_kb(void) {
 
     // Splash logo, held until the deferred dashboard repaint below.
     lcd_fill_rect(0, 0, PANEL_WIDTH - 1, PANEL_HEIGHT - 1, COL_BG);
-    lcd_draw_qgf(0, 0, gfx_sonixqmk);
+    lcd_draw_image(&img_sonixqmk, 0, 0);
 
     display_backlight_init();
 
@@ -216,7 +208,7 @@ static void draw_conn_number(bool force) {
     lcd_fill_rect(CONN_NUM_X, 0, CONN_NUM_X + CONN_NUM_W, CONN_ICON_W - 1, COL_BG);
     if (c) {
         char s[2] = {c, 0};
-        lcd_draw_text(CONN_NUM_X, 2, FONT_STATUS, s, COL_FG, COL_BG);
+        lcd_draw_text(CONN_NUM_X, 2, FONT_STATUS, s);
     }
 }
 
@@ -234,7 +226,7 @@ static void draw_battery(bool force) {
         char bbuf[8];
         snprintf(bbuf, sizeof(bbuf), "%u%%", batt);
         uint16_t w = lcd_text_width(FONT_STATUS, bbuf);
-        lcd_draw_text(PANEL_WIDTH - 1 - w, STATUS_Y, FONT_STATUS, bbuf, COL_FG, COL_BG);
+        lcd_draw_text(PANEL_WIDTH - 1 - w, STATUS_Y, FONT_STATUS, bbuf);
     }
 }
 
@@ -264,29 +256,29 @@ void display_housekeeping_task(void) {
 void display_draw_mac_logo(void) {
     mac_mode = true;
     if (splash_cleared && !display_paused)
-        lcd_draw_qgf(0, 0, gfx_apple_icon_24x24);
+        lcd_draw_image(&img_apple_icon_24x24, 0, 0);
 }
 
 void display_draw_windows_logo(void) {
     mac_mode = false;
     if (splash_cleared && !display_paused)
-        lcd_draw_qgf(0, 0, gfx_windows_icon_24x24);
+        lcd_draw_image(&img_windows_icon_24x24, 0, 0);
 }
 
 void display_draw_usb_logo(void) {
     connection_mode = CONN_MODE_WIRED;
     if (splash_cleared && !display_paused)
-        lcd_draw_qgf(32, 0, gfx_cable_icon_24x24);
+        lcd_draw_image(&img_cable_icon_24x24, 32, 0);
 }
 
 void display_draw_bluetooth_logo(void) {
     connection_mode = CONN_MODE_BLUETOOTH;
     if (splash_cleared && !display_paused)
-        lcd_draw_qgf(32, 0, gfx_bluetooth_icon_24x24);
+        lcd_draw_image(&img_bluetooth_icon_24x24, 32, 0);
 }
 
 void display_draw_2_4_g_logo(void) {
     connection_mode = CONN_MODE_2_4G;
     if (splash_cleared && !display_paused)
-        lcd_draw_qgf(32, 0, gfx_2_4_g_icon_24x24);
+        lcd_draw_image(&img_2_4_g_icon_24x24, 32, 0);
 }

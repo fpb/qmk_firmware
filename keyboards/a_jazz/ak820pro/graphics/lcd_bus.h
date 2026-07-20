@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "res/lcd_assets.h"   // lcd_image_t / lcd_font_t + the generated tile assets
+
 // Bring up the GC9107 panel (reset + init sequence + rotation 270).
 void lcd_init(void);
 
@@ -30,8 +32,10 @@ bool lcd_blit_busy(void);
 // CPU, blocking: RGB565 tile from a firmware/RAM array -> panel rect.
 void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 
-// Bare-metal dashboard drawing (Quantum-Painter-free).
+// Bare-metal dashboard drawing (Quantum-Painter-free). Images and glyphs are
+// pre-rendered RGB565 tiles from res/lcd_assets.h -- no decode, no blending. Colours
+// are baked into the tiles, so there are no fg/bg arguments.
 void lcd_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
-void lcd_draw_qgf(uint16_t x, uint16_t y, const uint8_t *qgf);   // native RGB565 QGF image
-void lcd_draw_text(uint16_t x, uint16_t y, const uint8_t *font, const char *s, uint16_t fg, uint16_t bg);
-uint16_t lcd_text_width(const uint8_t *font, const char *s);    // total advance width of a string
+void lcd_draw_image(const lcd_image_t *img, uint16_t x, uint16_t y);
+void lcd_draw_text(uint16_t x, uint16_t y, const lcd_font_t *f, const char *s);
+uint16_t lcd_text_width(const lcd_font_t *f, const char *s);    // total advance width of a string

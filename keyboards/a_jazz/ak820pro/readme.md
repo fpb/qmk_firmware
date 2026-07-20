@@ -25,6 +25,7 @@ The following is supported by this port:
     - battery charge level (%)
 - [x] Triple mode support (Use `Fn`+[`Q`|`W`|`E`] for Bluetooth and `Fn`+`R` for 2.4G dongle. Press `Fn`+`P` (1 second) to enter pairing mode)
 - [x] Per-key RGB Matrix (hardware PWM across CT16B0/B1/B2 — see `hardware_pwm.diff`)
+- [x] Play animations from flash memory (functional, but still a work in progress)
 
 Keyboard Maintainer: [fpb](https://github.com/fpb)
 

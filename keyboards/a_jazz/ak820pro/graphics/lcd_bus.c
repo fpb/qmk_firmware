@@ -5,9 +5,10 @@
 // and the dashboard are driven entirely bare-metal (no Quantum Painter); the flash
 // animation runs on the interrupt-driven SPI-to-SPI DMA. See docs/LCD_FLASH_LAYER.md.
 
+#include <string.h>
+
 #include "quantum.h"
 #include "gpio.h"
-#include "color.h"      // hsv_to_rgb_nocie for paletted QGF images
 #include "lcd_bus.h"
 
 extern void display_set_paused(bool paused);   // graphics/display.c
@@ -162,69 +163,6 @@ void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16
     cs(1);
 }
 
-static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
-static uint32_t rd24(const uint8_t *p) { return p[0] | (p[1] << 8) | ((uint32_t)p[2] << 16); }
-
-// A pull-based byte source over an (optionally RLE) stream, shared by the image and
-// font decoders. Byte-level RLE: marker M>=128 -> literal run of (M-127) bytes; M<128
-// -> repeat the next byte M times.
-typedef struct { const uint8_t *p, *end; bool rle; uint8_t mode; uint16_t remain; uint8_t val; } bytesrc_t;
-static uint8_t bs_next(bytesrc_t *b) {
-    if (!b->rle) return (b->p < b->end) ? *b->p++ : 0;
-    if (b->remain == 0) {
-        if (b->p >= b->end) return 0;
-        uint8_t m = *b->p++;
-        if (m >= 128) { b->mode = 1; b->remain = m - 127; }                        // literal run
-        else          { b->mode = 0; b->remain = m; b->val = (b->p < b->end) ? *b->p++ : 0; } // repeat
-    }
-    b->remain--;
-    return (b->mode == 1) ? ((b->p < b->end) ? *b->p++ : 0) : b->val;
-}
-
-// Draw a QP QGF image at (x,y): native RGB565 (format 0x08) or paletted (0x04..0x07,
-// e.g. the 8bpp splash) with an HSV palette converted to RGB565.
-void lcd_draw_qgf(uint16_t x, uint16_t y, const uint8_t *qgf) {
-    uint16_t w = rd16(qgf + 17), h = rd16(qgf + 19);
-    uint32_t foff = rd24(qgf + 28);                 // frame_offsets block payload = offset[0]
-    uint8_t  fmt  = qgf[foff + 5];                  // frame descriptor: format @ +5
-    uint8_t  comp = qgf[foff + 7];                  //                   compression @ +7
-    const uint8_t *blk = qgf + foff + 11;           // first block after the frame descriptor
-
-    static uint16_t pal[256];                        // static: keep it off the M0 stack
-    uint8_t bpp = 0;
-    if (fmt >= 0x04 && fmt <= 0x07) {                // paletted
-        bpp = 1u << (fmt - 4);                        // 0x04->1bpp .. 0x07->8bpp
-        if (blk[0] == 0x03) {                         // palette block: HSV888 entries
-            uint32_t plen = rd24(blk + 2), nent = plen / 3;
-            const uint8_t *pe = blk + 5;
-            for (uint32_t i = 0; i < nent && i < 256; i++) {
-                hsv_t hsv = { pe[i*3], pe[i*3+1], pe[i*3+2] };
-                rgb_t rgb = hsv_to_rgb_nocie(hsv);
-                pal[i] = (uint16_t)(((rgb.r >> 3) << 11) | ((rgb.g >> 2) << 5) | (rgb.b >> 3));
-            }
-            blk += 5 + plen;
-        }
-    } else if (fmt != 0x08) {
-        return;                                       // unsupported format
-    }
-    while (blk[0] != 0x05) blk += 5 + rd24(blk + 2);  // seek the data block
-    bytesrc_t bs = { .p = blk + 5, .end = blk + 5 + rd24(blk + 2), .rle = (comp != 0) };
-    uint32_t npix = (uint32_t)w * h;
-
-    lcd_window(x, y, x + w - 1, y + h - 1);
-    if (fmt == 0x08) {                                // native RGB565: 2 bytes/pixel, panel order
-        for (uint32_t i = 0; i < npix * 2; i++) tx8(bs_next(&bs));
-    } else {                                          // paletted: bpp-bit indices (LSB first)
-        uint8_t mask = (1u << bpp) - 1, cur = 0, bits = 0;
-        for (uint32_t i = 0; i < npix; i++) {
-            if (bits == 0) { cur = bs_next(&bs); bits = 8; }
-            uint16_t col = pal[cur & mask]; cur >>= bpp; bits -= bpp;
-            tx8(col >> 8); tx8(col & 0xFF);
-        }
-    }
-    cs(1);
-}
-
 // ---------------------------------------------------------------------------
 // Panel bring-up (bare-metal GC9107 init; literal opcodes, no Quantum Painter)
 // ---------------------------------------------------------------------------
@@ -322,47 +260,29 @@ static inline void blit_arm(uint32_t addr) { lcd_blit_flash(addr, 0, 0, FRAME_W,
 bool lcd_blit_busy(void) { return !blit_done; }
 
 // --- QFF text (grayscale, RLE) ---------------------------------------------
-static uint16_t lerp565(uint16_t bg, uint16_t fg, uint8_t idx, uint8_t maxidx) {
-    uint8_t br=(bg>>11)&0x1F, bgc=(bg>>5)&0x3F, bb=bg&0x1F;
-    uint8_t fr=(fg>>11)&0x1F, fgc=(fg>>5)&0x3F, fb=fg&0x1F;
-    uint8_t r = br + (fr - br) * idx / maxidx, g = bgc + (fgc - bgc) * idx / maxidx, b = bb + (fb - bb) * idx / maxidx;
-    return (uint16_t)((r << 11) | (g << 5) | b);
+// Locate a character's tile. Glyphs are stored contiguously in charset order, so the
+// charset index IS the tile index -- no per-glyph table needed.
+static const uint16_t *glyph_tile(const lcd_font_t *f, char c) {
+    const char *p = strchr(f->charset, c);
+    if (!p || !c) return NULL;                       // strchr matches the NUL terminator
+    return f->px + (uint32_t)(p - f->charset) * f->cell_w * f->cell_h;
 }
-// 25 (font descriptor) + 290 (ascii table) + 5 (glyph-data block header) = 320.
-// Grayscale fonts have no palette/unicode blocks. Glyph offsets are relative to here.
-#define QFF_GLYPHDATA 320u
 
-static const uint8_t *qff_glyph(const uint8_t *font, char c, uint8_t *width) {
-    if (c < 0x20 || c > 0x7E) { *width = 0; return NULL; }
-    const uint8_t *e = font + 30 + (uint32_t)(c - 0x20) * 3;   // 25 desc + 5 ascii-block header
-    uint32_t v = e[0] | (e[1] << 8) | ((uint32_t)e[2] << 16);
-    *width = v & 0x3F;                                        // 6-bit width
-    return font + QFF_GLYPHDATA + (v >> 6);                   // 18-bit offset into glyph data
+// Monospace: every cell has the same advance, so width is just the character count.
+// Unknown characters still advance (they blit nothing), keeping layout stable.
+uint16_t lcd_text_width(const lcd_font_t *f, const char *s) {
+    return (uint16_t)(strlen(s) * f->cell_w);
 }
-uint16_t lcd_text_width(const uint8_t *font, const char *s) {
-    uint16_t w = 0; uint8_t gw;
-    for (; *s; s++) { qff_glyph(font, *s, &gw); w += gw; }
-    return w;
-}
-void lcd_draw_text(uint16_t x, uint16_t y, const uint8_t *font, const char *s, uint16_t fg, uint16_t bg) {
-    uint8_t lh = font[17], fmt = font[21], comp = font[23];
-    uint8_t bpp = (fmt == 0x00) ? 1 : (fmt == 0x01) ? 2 : (fmt == 0x02) ? 4 : 8;
-    uint8_t mask = (1u << bpp) - 1, maxidx = mask;
-    const uint8_t *fend = font + (font[9] | (font[10]<<8) | ((uint32_t)font[11]<<16));
-    for (; *s; s++) {
-        uint8_t gw; const uint8_t *g = qff_glyph(font, *s, &gw);
-        if (!g || gw == 0) continue;
-        bytesrc_t bs = { .p = g, .end = fend, .rle = (comp != 0) };
-        lcd_window(x, y, x + gw - 1, y + lh - 1);
-        uint32_t npix = (uint32_t)gw * lh; uint8_t cur = 0, bits = 0;
-        for (uint32_t i = 0; i < npix; i++) {
-            if (bits == 0) { cur = bs_next(&bs); bits = 8; }
-            uint16_t col = lerp565(bg, fg, cur & mask, maxidx); cur >>= bpp; bits -= bpp;
-            tx8(col >> 8); tx8(col & 0xFF);
-        }
-        cs(1);
-        x += gw;
+
+void lcd_draw_text(uint16_t x, uint16_t y, const lcd_font_t *f, const char *s) {
+    for (; *s; s++, x += f->cell_w) {
+        const uint16_t *g = glyph_tile(f, *s);
+        if (g) lcd_blit_ram(g, x, y, f->cell_w, f->cell_h);
     }
+}
+
+void lcd_draw_image(const lcd_image_t *img, uint16_t x, uint16_t y) {
+    lcd_blit_ram(img->px, x, y, img->w, img->h);
 }
 
 // ---------------------------------------------------------------------------
