@@ -1,0 +1,136 @@
+{
+  "assets": [
+    {
+      "name": "2_4_g_icon_24x24",
+      "source": "2_4_g_icon_24x24.png",
+      "raw": "raw/2_4_g_icon_24x24.raw",
+      "width": 24,
+      "height": 24,
+      "format": "rgb565",
+      "depth": 16,
+      "stride": 48,
+      "bytes": 1152,
+      "colors": 3,
+      "palette": [
+        "#000000FF",
+        "#808080FF",
+        "#FFFFFFFF"
+      ]
+    },
+    {
+      "name": "Iosevka-Medium-20",
+      "source": "Iosevka-Medium-20.png",
+      "raw": "raw/Iosevka-Medium-20.raw",
+      "width": 950,
+      "height": 23,
+      "format": "mono1",
+      "depth": 1,
+      "stride": 119,
+      "bytes": 2737,
+      "colors": 3,
+      "font": {
+        "cell_w": 10,
+        "cell_h": 23,
+        "count": 95,
+        "first_char": 32
+      }
+    },
+    {
+      "name": "Iosevka-Regular-30",
+      "source": "Iosevka-Regular-30.png",
+      "raw": "raw/Iosevka-Regular-30.raw",
+      "width": 1425,
+      "height": 34,
+      "format": "mono1",
+      "depth": 1,
+      "stride": 179,
+      "bytes": 6086,
+      "colors": 3,
+      "font": {
+        "cell_w": 15,
+        "cell_h": 34,
+        "count": 95,
+        "first_char": 32
+      }
+    },
+    {
+      "name": "apple_icon_24x24",
+      "source": "apple_icon_24x24.png",
+      "raw": "raw/apple_icon_24x24.raw",
+      "width": 24,
+      "height": 24,
+      "format": "rgb565",
+      "depth": 16,
+      "stride": 48,
+      "bytes": 1152,
+      "colors": 2,
+      "palette": [
+        "#000000FF",
+        "#FFFFFFFF"
+      ]
+    },
+    {
+      "name": "bluetooth_icon_24x24",
+      "source": "bluetooth_icon_24x24.png",
+      "raw": "raw/bluetooth_icon_24x24.raw",
+      "width": 24,
+      "height": 24,
+      "format": "rgb565",
+      "depth": 16,
+      "stride": 48,
+      "bytes": 1152,
+      "colors": 3,
+      "palette": [
+        "#000000FF",
+        "#0080C0FF",
+        "#FFFFFFFF"
+      ]
+    },
+    {
+      "name": "cable_icon_24x24",
+      "source": "cable_icon_24x24.png",
+      "raw": "raw/cable_icon_24x24.raw",
+      "width": 24,
+      "height": 24,
+      "format": "rgb565",
+      "depth": 16,
+      "stride": 48,
+      "bytes": 1152,
+      "colors": 3,
+      "palette": [
+        "#000000FF",
+        "#808080FF",
+        "#FFFFFFFF"
+      ]
+    },
+    {
+      "name": "sonixqmk",
+      "source": "sonixqmk.png",
+      "raw": "raw/sonixqmk.raw",
+      "width": 128,
+      "height": 128,
+      "format": "rgb565",
+      "depth": 16,
+      "stride": 256,
+      "bytes": 32768,
+      "colors": 1541,
+      "palette": null
+    },
+    {
+      "name": "windows_icon_24x24",
+      "source": "windows_icon_24x24.png",
+      "raw": "raw/windows_icon_24x24.raw",
+      "width": 24,
+      "height": 24,
+      "format": "rgb565",
+      "depth": 16,
+      "stride": 48,
+      "bytes": 1152,
+      "colors": 2,
+      "palette": [
+        "#000000FF",
+        "#0080C0FF"
+      ]
+    }
+  ]
+}
