@@ -87,6 +87,39 @@ static void tx8(uint8_t b) {
     (void)SN_SPI0->DATA;
 }
 
+// --- pipelined bulk writer -------------------------------------------------
+// tx8() pays a full RX round-trip per byte (write, wait for the echo, discard), so a
+// screenful costs far more than the wire time. For pixel payloads we instead keep the
+// TX FIFO full and drain RX opportunistically -- bytes then stream back-to-back at the
+// SPI clock. Caller must have set the window already (CS low, DC=data).
+static inline void rx_drain(void) { while (!SN_SPI0->STAT_b.RX_EMPTY) (void)SN_SPI0->DATA; }
+
+static inline void tx_pipe(uint8_t b) {
+    uint32_t g = 0;
+    while (SN_SPI0->STAT_b.TX_FULL) {          // only stall when the FIFO is actually full
+        rx_drain();
+        if (++g > 1000000u) break;
+    }
+    SN_SPI0->DATA = b;
+    if (!SN_SPI0->STAT_b.RX_EMPTY) (void)SN_SPI0->DATA;   // keep RX from backing up
+}
+
+// Wait for the last queued byte to leave the shifter, then discard its echo.
+static void tx_flush(void) {
+    uint32_t g = 0;
+    while ((!SN_SPI0->STAT_b.TX_EMPTY || SN_SPI0->STAT_b.BUSY) && ++g < 1000000u) rx_drain();
+    rx_drain();
+}
+
+// RGB565 is streamed hi-byte-first to match the panel.
+static void tx_pixels(const uint16_t *px, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) {
+        tx_pipe((uint8_t)(px[i] >> 8));
+        tx_pipe((uint8_t)(px[i] & 0xFF));
+    }
+    tx_flush();
+}
+
 static void reset_panel(void) {
     gpio_set_pin_output(PANEL_RST);
     gpio_write_pin(PANEL_RST, 1); wait_ms(20);
@@ -112,7 +145,20 @@ void lcd_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t 
     lcd_window(x0, y0, x1, y1);
     uint32_t px = (uint32_t)(x1 - x0 + 1) * (uint32_t)(y1 - y0 + 1);
     uint8_t hi = color >> 8, lo = color & 0xFF;
-    for (uint32_t i = 0; i < px; i++) { tx8(hi); tx8(lo); }
+    for (uint32_t i = 0; i < px; i++) { tx_pipe(hi); tx_pipe(lo); }
+    tx_flush();
+    cs(1);
+}
+
+// Stage C: blit a w*h RGB565 tile from RAM (firmware array) to (x,y).
+// The SN32 DMA is SPI-to-SPI only -- its source is the other SPI's RX FIFO, with no
+// source-address register -- so RAM-resident art cannot be DMA'd and is CPU-pushed here
+// (pipelined, ~wire speed). Only flash-resident art can use lcd_blit_flash(). See
+// docs/LCD_FLASH_LAYER.md.
+void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    if (!px || !w || !h) return;
+    lcd_window(x, y, x + w - 1, y + h - 1);
+    tx_pixels(px, (uint32_t)w * (uint32_t)h);
     cs(1);
 }
 
@@ -243,18 +289,24 @@ void Vector58(void) {
     }
 }
 
-static void blit_arm(uint32_t addr) {
+// Stage C: blit a w*h RGB565 tile from flash offset `src` to the panel rect at (x,y).
+// Interrupt-driven and NON-BLOCKING: arms the SPI1(flash)->SPI0(LCD) engine and returns;
+// Vector58 signals completion via blit_done. Animation frames are just the full-frame case.
+// NOTE: the panel's MADCTL orientation is the caller's business -- flash art authored for
+// the animation orientation (MADCTL_ANIM) will not match the dashboard's (MADCTL_270).
+void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    if (!w || !h) return;
+    uint32_t bytes = (uint32_t)w * (uint32_t)h * 2u;
     blit_done = false;
-    // QP has been driving SPI0 (CPU writes) -- fully re-init it so the DMA sees the
-    // exact pristine SPI0 the standalone had (SPIEN=0 + FRESET re-latches DFETCH_EN,
-    // which a live FRESET can't). Then match the standalone's blit order exactly.
+    // Fully re-init SPI0 so the DMA sees a pristine peripheral (SPIEN=0 + FRESET re-latches
+    // DFETCH_EN, which a live FRESET can't) after any CPU-write drawing.
     spi0_setup();
     SN_SPI0->CTRL0_b.FRESET = 0b11; SN_SPI1->CTRL0_b.FRESET = 0b11;
     SN_SPI0->DMACTRL_b.DMAEN = 0; SN_SPI0->DMACTRL_b.DIR = 0;
-    SN_SPI0->DMACNT_b.CNT = FRAME_BYTES - 1; SN_SPI0->DMAHTCNT_b.HTCNT = (FRAME_BYTES - 1) / 2;
-    lcd_window(0, 0, FRAME_W - 1, FRAME_H - 1);
+    SN_SPI0->DMACNT_b.CNT = bytes - 1; SN_SPI0->DMAHTCNT_b.HTCNT = (bytes - 1) / 2;
+    lcd_window(x, y, x + w - 1, y + h - 1);
     gpio_write_pin(FLASH_CS, 0);
-    spi1_xfer(FLASH_CMD_READ); spi1_xfer((addr>>16)&0xFF); spi1_xfer((addr>>8)&0xFF); spi1_xfer(addr&0xFF);
+    spi1_xfer(FLASH_CMD_READ); spi1_xfer((src>>16)&0xFF); spi1_xfer((src>>8)&0xFF); spi1_xfer(src&0xFF);
     SN_SPI0->IC = 0x3F; SN_SPI1->IC = 0x3F;
     SN_SPI0->CTRL0_b.DL = 0xF;               // 16-bit TX (one RGB565 pixel per word)
     SN_SPI0->IE = (1u << 5) | (1u << 4);
@@ -262,6 +314,12 @@ static void blit_arm(uint32_t addr) {
     NVIC_ISER[0] = (1u << SPI0_IRQ);        // we own Vector58 -> real interrupt-driven completion
     SN_SPI0->DMACTRL_b.DMAEN = 1;   // interrupt-driven; Vector58 signals completion (non-blocking)
 }
+
+// Animation frames are full-screen tiles.
+static inline void blit_arm(uint32_t addr) { lcd_blit_flash(addr, 0, 0, FRAME_W, FRAME_H); }
+
+// True once the in-flight DMA blit has completed (Vector58 sets it).
+bool lcd_blit_busy(void) { return !blit_done; }
 
 // --- QFF text (grayscale, RLE) ---------------------------------------------
 static uint16_t lerp565(uint16_t bg, uint16_t fg, uint8_t idx, uint8_t maxidx) {

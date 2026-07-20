@@ -18,6 +18,18 @@ void anim_task(void);
 // True while the animation owns the bus; suspend RTC I2C polling then (shared port A).
 bool anim_active(void);
 
+// --- Stage C tile primitives (see docs/LCD_FLASH_LAYER.md) -------------------
+// The SN32 DMA is SPI-to-SPI ONLY (source = the other SPI's RX FIFO, no source-address
+// register), so only FLASH-resident art can be DMA'd. RAM-resident art is CPU-pushed
+// through the pipelined bulk writer -- fast (~wire speed) but blocking.
+
+// DMA, non-blocking: flash tile -> panel rect. Poll lcd_blit_busy() for completion.
+void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+bool lcd_blit_busy(void);
+
+// CPU, blocking: RGB565 tile from a firmware/RAM array -> panel rect.
+void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+
 // Bare-metal dashboard drawing (Quantum-Painter-free).
 void lcd_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
 void lcd_draw_qgf(uint16_t x, uint16_t y, const uint8_t *qgf);   // native RGB565 QGF image
