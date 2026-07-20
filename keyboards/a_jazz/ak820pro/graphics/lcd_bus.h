@@ -28,6 +28,10 @@ bool anim_active(void);
 // DMA, non-blocking: flash tile -> panel rect. Poll lcd_blit_busy() for completion.
 void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 bool lcd_blit_busy(void);
+void lcd_blit_flash_probe(uint32_t src, uint16_t w, uint16_t h);
+// Brings up SPI1 (external flash). lcd_blit_flash does not do this itself, so
+// call it before any blit outside the animation path.
+void lcd_flash_init(void);
 
 // CPU, blocking: RGB565 tile from a firmware/RAM array -> panel rect.
 void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h);

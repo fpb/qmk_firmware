@@ -139,7 +139,17 @@ static void lcd_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
 
 // ---------------------------------------------------------------------------
 // Bare-metal dashboard drawing (replaces Quantum Painter). RGB565 is streamed
-// hi-byte-first to match the panel (proven by the flash animation path).
+// hi-byte-first to match the panel.
+//
+// Byte order differs by path, and both are correct -- verified on hardware by
+// drawing the same stock asset (usb_dongle, flash 0x0D8310) each way and getting
+// an identical green dongle:
+//   RAM  -> CPU  (here):            uint16 colour values, emitted hi byte first.
+//   flash-> DMA  (lcd_blit_flash):  bytes stored LO first; CTRL0.DL=0xF packs the
+//                                   pair into a 16-bit word and shifts it out MSB
+//                                   first, which swaps them back.
+// So a RAM tile promoted to flash must have its bytes SWAPPED on the way in --
+// it is not a straight copy. See docs/LCD_FLASH_LAYER.md (Stage D).
 // ---------------------------------------------------------------------------
 void lcd_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) {
     if (x1 < x0 || y1 < y0) return;
@@ -299,8 +309,28 @@ bool anim_active(void) { return anim_on; }
 
 static void set_madctl(uint8_t v) { cs(0); dc(0); tx8(0x36); dc(1); tx8(v); cs(1); }
 
-void anim_toggle(void) {
+// SPI1 (external flash) is brought up lazily -- lcd_blit_flash does NOT do it,
+// so any caller outside the animation path must call this first.
+void lcd_flash_init(void) {
     if (!spi1_inited) { spi1_setup(); spi1_inited = true; }
+}
+
+// One-shot self-contained flash blit: brings up SPI1, blits, waits with a bound,
+// then puts SPI0 back exactly as anim_toggle's stop path does so the dashboard
+// runs unaffected. The wait is bounded on purpose -- completion rides the SPI0
+// IRQ, and an unbounded spin here hangs the keyboard before USB enumerates.
+void lcd_blit_flash_probe(uint32_t src, uint16_t w, uint16_t h) {
+    lcd_flash_init();
+    lcd_blit_flash(src, 0, 0, w, h);
+    for (uint32_t i = 0; i < 4000000u && !blit_done; i++) { __asm__ volatile("nop"); }
+    gpio_write_pin(FLASH_CS, 1); cs(1);
+    NVIC_ICER[0] = (1u << SPI0_IRQ);
+    SN_SPI0->IE  = 0;
+    spi0_setup();
+}
+
+void anim_toggle(void) {
+    lcd_flash_init();
     if (!anim_on) {
         display_set_paused(true);           // stop QP touching the bus
         set_madctl(MADCTL_ANIM);            // frames authored for this orientation

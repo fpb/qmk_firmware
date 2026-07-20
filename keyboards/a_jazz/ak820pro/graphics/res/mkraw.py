@@ -6,12 +6,22 @@ Decodes the source PNGs into flat .raw pixel files plus a manifest describing ea
 one (dimensions, depth/format, stride, size, palette). No third-party deps: PNG is
 decoded here with stdlib zlib only (Pillow/ImageMagick are not available).
 
-EVERYTHING is emitted as rgb565: 16 bits per pixel, big-endian (hi byte first, matching
-how the panel is fed), alpha composited over black. This is deliberate -- these raws are
-destined for external flash, and the SPI-to-SPI DMA can only stream raw pixels: it cannot
-expand 1bpp or blend fg/bg on the fly. So the on-flash format must already be what the
-panel consumes, and keeping the firmware-embedded step in the same format makes the later
-move to flash a pure relocation rather than a reformat.
+EVERYTHING is emitted as rgb565: 16 bits per pixel, big-endian (hi byte first), alpha
+composited over black. That is the order the CPU path wants: lcd_blit_ram feeds
+tx_pixels, which emits each uint16 hi byte first.
+
+CAUTION -- byte order depends on which path draws the asset, and this file only emits
+the RAM/CPU order:
+  RAM   -> CPU  (lcd_blit_ram):   hi byte first  <- what we emit here
+  flash -> DMA  (lcd_blit_flash): LO byte first  <- external flash needs the swap
+The DMA runs the SPI in 16-bit mode (CTRL0.DL=0xF), packing a byte pair into one word
+and shifting it out MSB first, so flash bytes must be stored lo-first to arrive correctly.
+Verified on hardware: the stock usb_dongle asset (flash 0x0D8310, stored lo-first) renders
+identically via DMA and via this path once byte-swapped.
+
+So moving an asset into flash for Stage D is NOT a pure relocation -- the bytes must be
+swapped on the way in. (The DMA can only stream raw pixels: it cannot expand 1bpp or blend
+fg/bg on the fly, so the on-flash bytes must already be what the panel consumes.)
 
 Consequence for fonts: glyph colours are BAKED. Harmless here -- the dashboard is
 uniformly COL_FG 0xFFFF on COL_BG 0x0000, which is exactly what the source PNGs are.
