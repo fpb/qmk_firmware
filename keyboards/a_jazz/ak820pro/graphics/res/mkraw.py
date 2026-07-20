@@ -6,12 +6,19 @@ Decodes the source PNGs into flat .raw pixel files plus a manifest describing ea
 one (dimensions, depth/format, stride, size, palette). No third-party deps: PNG is
 decoded here with stdlib zlib only (Pillow/ImageMagick are not available).
 
-Output formats, chosen per image from its actual colour count:
-  mono1   1 bit per pixel, MSB-first, rows padded to a byte boundary (stride =
-          ceil(w/8)). Bit 1 = "ink" (the brighter colour) -> drawn as fg, 0 -> bg.
-          Used for the icons and the font atlases, which are 1/2-bit colormap PNGs.
-  rgb565  16 bits per pixel, big-endian (hi byte first, matching how the panel is
-          fed). Any alpha is composited over black. Used for true-colour art.
+EVERYTHING is emitted as rgb565: 16 bits per pixel, big-endian (hi byte first, matching
+how the panel is fed), alpha composited over black. This is deliberate -- these raws are
+destined for external flash, and the SPI-to-SPI DMA can only stream raw pixels: it cannot
+expand 1bpp or blend fg/bg on the fly. So the on-flash format must already be what the
+panel consumes, and keeping the firmware-embedded step in the same format makes the later
+move to flash a pure relocation rather than a reformat.
+
+Consequence for fonts: glyph colours are BAKED. Harmless here -- the dashboard is
+uniformly COL_FG 0xFFFF on COL_BG 0x0000, which is exactly what the source PNGs are.
+
+Font atlases are self-describing: a magenta (255,0,255) marker sits at each glyph cell's
+top-left corner, so marker spacing IS the advance and marker count IS the glyph count.
+The markers are metadata and resolve to background in the output.
 
 Usage:
     python3 mkraw.py            # inspect only: report what each PNG contains
@@ -191,10 +198,17 @@ def font_metrics(w, h, px):
 
 
 def to_rgb565(w, h, px):
-    """16bpp big-endian (hi byte first), alpha composited over black."""
+    """16bpp big-endian (hi byte first), alpha composited over black.
+
+    MARKER pixels are metadata (glyph cell origins), not art, so they resolve to the
+    background colour rather than magenta.
+    """
     out = bytearray()
-    for (r, g, b, a) in px:
-        if a != 255:
+    for p in px:
+        r, g, b, a = p
+        if p[:3] == MARKER:
+            r = g = b = 0
+        elif a != 255:
             r, g, b = r * a // 255, g * a // 255, b * a // 255
         v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
         out += bytes((v >> 8, v & 0xFF))
@@ -221,13 +235,11 @@ def main():
         # fg/bg. Everything else (icons, splash) keeps its real colours as rgb565:
         # the icons are NOT all monochrome (bluetooth is blue, others carry a grey).
         metrics = font_metrics(w, h, px)
+        data, stride, fmt, depth = *to_rgb565(w, h, px), "rgb565", 16
+        note = ""
         if metrics:
-            data, stride, fmt, depth = *to_mono1(w, h, px), "mono1", 1
-            note = "font atlas: %d glyphs @ %dx%d, first=0x%02X" % (
+            note = "font atlas: %d glyphs @ %dx%d, first=0x%02X (fg/bg baked)" % (
                 metrics["count"], metrics["cell_w"], metrics["cell_h"], metrics["first_char"])
-        else:
-            data, stride, fmt, depth = *to_rgb565(w, h, px), "rgb565", 16
-            note = ""
         name = os.path.splitext(f)[0]
         print("%-30s %5d %5d  %-7s %6d %8d  %s" % (f, w, h, fmt, len(colors), len(data), note))
         entry = {
