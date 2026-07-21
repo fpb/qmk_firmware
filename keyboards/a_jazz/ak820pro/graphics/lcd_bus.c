@@ -343,18 +343,108 @@ bool flash_page_program(uint32_t addr, const uint8_t *src, uint32_t len) {
     return true;
 }
 
-// CRC32 (IEEE, reflected) over a flash range, so the host can verify a large
-// upload without reading megabytes back over 29-byte HID packets.
-uint32_t flash_crc32(uint32_t addr, uint32_t len) {
+// CRC32 (IEEE, reflected) folded over a flash range, resuming from a caller-held
+// accumulator so a large verify can be split across many short calls. Reading a
+// whole range in one go blocks for the entire read -- see the CRC_SLICE note in
+// ak820pro.c. Seed with 0xFFFFFFFF and invert the final result.
+uint32_t flash_crc32_acc(uint32_t crc, uint32_t addr, uint32_t len) {
     lcd_flash_init();
-    uint32_t crc = 0xFFFFFFFFu;
     flash_cmd_addr(FLASH_CMD_READ, addr);
     for (uint32_t i = 0; i < len; i++) {
         crc ^= spi1_rw(0xFF);
         for (uint8_t b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320u & (-(int32_t)(crc & 1)));
     }
     gpio_write_pin(FLASH_CS, 1);
-    return ~crc;
+    return crc;
+}
+
+uint32_t flash_crc32(uint32_t addr, uint32_t len) {
+    return ~flash_crc32_acc(0xFFFFFFFFu, addr, len);
+}
+
+// ---------------------------------------------------------------------------
+// Flash-resident asset index (Stage D)
+//
+// res/mkraw.py --flash packs every asset into one blob written at
+// FLASH_ASSET_BASE: a 4K index sector, then the assets page-aligned. Entry
+// offsets are stored RELATIVE to the region base so the blob can be relocated.
+//
+// Font atlases are packed as per-glyph CONTIGUOUS tiles, not as a wide atlas
+// image: a glyph cell inside an atlas is strided (cell_w wide, img_w apart) and
+// the DMA can only stream consecutive bytes, so an atlas is undrawable by it.
+// Glyph n is therefore one flat blit at off + n*cell_w*cell_h*2.
+// ---------------------------------------------------------------------------
+#define FA_MAGIC   0x53414B41u   // "AKAS"
+#define FA_MAX     32
+
+static flash_asset_t fa_tab[FA_MAX];
+static uint8_t       fa_count = 0;
+
+bool flash_assets_init(void) {
+    uint8_t hdr[8];
+    fa_count = 0;
+    lcd_flash_init();
+    flash_read_bytes(FLASH_ASSET_BASE, hdr, sizeof hdr);
+    uint32_t magic = (uint32_t)hdr[0] | ((uint32_t)hdr[1] << 8) |
+                     ((uint32_t)hdr[2] << 16) | ((uint32_t)hdr[3] << 24);
+    if (magic != FA_MAGIC || hdr[4] != 1) return false;   // absent or wrong version
+    uint8_t n = hdr[5] > FA_MAX ? FA_MAX : hdr[5];
+
+    uint8_t e[16];
+    for (uint8_t i = 0; i < n; i++) {
+        flash_read_bytes(FLASH_ASSET_BASE + 8u + (uint32_t)i * 16u, e, sizeof e);
+        flash_asset_t *a = &fa_tab[i];
+        a->id     = (uint16_t)(e[0] | (e[1] << 8));
+        a->off    = (uint32_t)e[2] | ((uint32_t)e[3] << 8) | ((uint32_t)e[4] << 16);
+        a->fmt    = e[5];
+        a->w      = (uint16_t)(e[6] | (e[7] << 8));
+        a->h      = (uint16_t)(e[8] | (e[9] << 8));
+        a->cell_w = e[10]; a->cell_h = e[11];
+        a->first  = e[12]; a->count  = e[13];
+    }
+    fa_count = n;
+    return true;
+}
+
+uint8_t flash_assets_count(void) { return fa_count; }
+
+const flash_asset_t *flash_asset(uint16_t id) {
+    for (uint8_t i = 0; i < fa_count; i++)
+        if (fa_tab[i].id == id) return &fa_tab[i];
+    return NULL;
+}
+
+// Blit a flash asset and wait for the DMA to finish. Bounded: a stuck DMA must
+// not wedge the caller. A 24x24 icon is ~0.5 ms; the 128x128 splash ~13 ms.
+static void blit_flash_sync(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    lcd_blit_flash(src, x, y, w, h);
+    for (uint32_t g = 0; g < 4000000u && lcd_blit_busy(); g++) { __asm__ volatile("nop"); }
+}
+
+void lcd_draw_flash_image(uint16_t id, uint16_t x, uint16_t y) {
+    const flash_asset_t *a = flash_asset(id);
+    if (!a) return;
+    blit_flash_sync(FLASH_ASSET_BASE + a->off, x, y, a->w, a->h);
+}
+
+// Draw one glyph of a flash font: tile index (c - first), each cell_w*cell_h.
+void lcd_draw_flash_glyph(uint16_t font_id, char c, uint16_t x, uint16_t y) {
+    const flash_asset_t *a = flash_asset(font_id);
+    if (!a || a->fmt != 1) return;
+    if ((uint8_t)c < a->first || (uint8_t)c >= a->first + a->count) return;
+    uint32_t tile = (uint32_t)((uint8_t)c - a->first) * a->cell_w * a->cell_h * 2u;
+    blit_flash_sync(FLASH_ASSET_BASE + a->off + tile, x, y, a->cell_w, a->cell_h);
+}
+
+void lcd_draw_flash_text(uint16_t font_id, uint16_t x, uint16_t y, const char *s) {
+    const flash_asset_t *a = flash_asset(font_id);
+    if (!a) return;
+    for (; *s; s++, x += a->cell_w) lcd_draw_flash_glyph(font_id, *s, x, y);
+}
+
+uint16_t lcd_flash_text_width(uint16_t font_id, const char *s) {
+    const flash_asset_t *a = flash_asset(font_id);
+    return a ? (uint16_t)(strlen(s) * a->cell_w) : 0;
 }
 
 static volatile bool blit_done = true;
@@ -404,31 +494,9 @@ static inline void blit_arm(uint32_t addr) { lcd_blit_flash(addr, 0, 0, FRAME_W,
 // True once the in-flight DMA blit has completed (Vector58 sets it).
 bool lcd_blit_busy(void) { return !blit_done; }
 
-// --- QFF text (grayscale, RLE) ---------------------------------------------
-// Locate a character's tile. Glyphs are stored contiguously in charset order, so the
-// charset index IS the tile index -- no per-glyph table needed.
-static const uint16_t *glyph_tile(const lcd_font_t *f, char c) {
-    const char *p = strchr(f->charset, c);
-    if (!p || !c) return NULL;                       // strchr matches the NUL terminator
-    return f->px + (uint32_t)(p - f->charset) * f->cell_w * f->cell_h;
-}
-
-// Monospace: every cell has the same advance, so width is just the character count.
-// Unknown characters still advance (they blit nothing), keeping layout stable.
-uint16_t lcd_text_width(const lcd_font_t *f, const char *s) {
-    return (uint16_t)(strlen(s) * f->cell_w);
-}
-
-void lcd_draw_text(uint16_t x, uint16_t y, const lcd_font_t *f, const char *s) {
-    for (; *s; s++, x += f->cell_w) {
-        const uint16_t *g = glyph_tile(f, *s);
-        if (g) lcd_blit_ram(g, x, y, f->cell_w, f->cell_h);
-    }
-}
-
-void lcd_draw_image(const lcd_image_t *img, uint16_t x, uint16_t y) {
-    lcd_blit_ram(img->px, x, y, img->w, img->h);
-}
+// The RAM/CPU text and image helpers are gone: all art is flash-resident and
+// DMA-drawn now (lcd_draw_flash_*). lcd_blit_ram() stays for anything that
+// still needs to push a RAM tile.
 
 // ---------------------------------------------------------------------------
 // Animation player

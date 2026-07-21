@@ -6,9 +6,15 @@
 > now the **forward** roadmap (what's left) plus the design rationale, corrected for what we
 > actually learned. Superseded predictions are called out inline.
 >
-> **Stage C is also DONE** on `ak820pro-flashlcd-tiles`: the dashboard runs entirely on
-> pre-rendered RGB565 tiles and the QGF/QFF decoders are gone. Only Stage D (moving assets into
-> flash) remains.
+> **Stage C is DONE** on `ak820pro-flashlcd-tiles`: the dashboard runs entirely on
+> pre-rendered RGB565 tiles and the QGF/QFF decoders are gone.
+>
+> **Stage D is DONE too.** All art lives in external flash and is DMA-drawn; the
+> firmware embeds none of it. Firmware dropped **133556 -> 75380 bytes (58 KB
+> reclaimed**, 29% of the 256 KB budget). Provisioning runs over raw HID on VIA
+> custom-value channel 0x11, driven by `ak820ctl`. Verified on hardware: splash,
+> clock, date, icons and battery all render from flash with the matrix scan
+> holding a steady 1396 Hz.
 
 ## Vision (refined)
 Drive as much of the LCD as possible from pre-rendered **RGB565 tiles** blitted with minimal
@@ -96,11 +102,42 @@ Both exist as of Stage C. The flash blit takes an arbitrary rect (`DMACNT = w*h*
 > **Gotcha:** `EMBED_CHARSET` is deliberately tight. Any dashboard text using characters outside
 > it silently draws nothing — widen the charset and regenerate.
 
+## Stage D as built (done)
+`mkraw.py --flash` packs everything into one blob written at `FLASH_ASSET_BASE`
+(`0x0CE0000`, chosen because it is the 3.12 MB that has read `0xFF` since
+manufacture): a 4K index sector, then the assets page-aligned. Entry offsets are
+region-relative, so the blob can be relocated.
+
+Things that were NOT obvious going in:
+- **Byte order is per draw path.** The DMA runs the SPI in 16-bit mode
+  (`CTRL0.DL=0xF`), which swaps each byte pair, so on-flash pixels must be
+  lo-byte-first -- the opposite of the hi-byte-first RAM tiles. Moving an asset
+  to flash is a **reformat, not a relocation**, contrary to what this doc and
+  `mkraw.py` used to claim.
+- **Font atlases had to be repacked.** A glyph cell inside an atlas is strided
+  (`cell_w` wide, `img_w` apart) and the DMA can only stream consecutive bytes,
+  so an atlas is undrawable by it. Fonts are stored as per-glyph contiguous
+  tiles; glyph *n* is one flat blit at `off + n*cell_w*cell_h*2`.
+- **Nothing in the HID path may block.** A page program is ~1-3 ms and a sector
+  erase 50-300 ms; a single synchronous erase cost ~6% of a scan window, and a
+  one-shot 184 KB CRC verify dropped the scan from 1396 Hz to ~300 Hz. Commands
+  return `FS_BUSY` and the host re-sends; the CRC folds ~1 KB per call and
+  returns `FS_MORE`. (Chunking fixes *latency*, not throughput -- the verify
+  still costs its total CPU, now spread out.)
+- **Writes are policed in firmware, not trusted to the host.** The stock LCD
+  assets below `0x1AA000` are never writable (our only dump of them has read
+  damage); the stock animation slots need an explicit unlock.
+
+`EMBED_CHARSET` and its "letters silently draw nothing" trap are gone -- both
+full 95-glyph atlases are in flash.
+
+**Consequence:** an unprovisioned keyboard shows a BLANK panel. There is no
+embedded art left to fall back on. The console prints the provisioning command.
+
 ## Remaining work
-- **Stage D: flash provisioning.** Write the `raw/*.raw` bytes to external flash, add an asset
-  index (id -> addr, w, h), and swap `lcd_blit_ram` for the already-generalised `lcd_blit_flash`.
-  Needs the flash **write** path (WREN / sector erase / page program / poll WIP on SPI1) plus a
-  host uploader (extending the existing raw-HID channel). The `--embed` step then goes away.
+- Nothing blocking. Optional: pipeline `spi1_rw` for bulk flash reads the way
+  `tx_pipe` pipelines writes -- the verify path is byte-at-a-time and costs
+  ~0.5 s of CPU for 184 KB.
 
 ## Staged plan (updated)
 - **Stage A — DONE.** Bare-metal `lcd_bus` (SPI0 + IRQ + SPI1), pipelined `tx_bulk`, fills,
@@ -110,8 +147,7 @@ Both exist as of Stage C. The flash blit takes an arbitrary rect (`DMACNT = w*h*
   `lcd_blit_flash` generalised to a rect; the whole dashboard moved onto pre-rendered RGB565
   tiles; **QGF and QFF decoders deleted** (~110 lines: block walk, byte-RLE, HSV palette, glyph
   offset table, `lerp565`). `lcd_draw_text()` lost its fg/bg args. Firmware 131KB of 256KB.
-- **Stage D — NEXT/optional.** Flash-resident assets + provisioning toolchain (above). Only the
-  animation lives in flash today.
+- **Stage D — DONE.** Flash-resident assets + provisioning toolchain (above). 58 KB reclaimed.
 
 ## Performance note (concrete, measured)
 - Our **pipelined `tx_bulk`** streams at ~wire speed (24 MHz, ~3 MB/s) — a full frame ~13 ms.

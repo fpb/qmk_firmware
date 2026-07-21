@@ -18,10 +18,10 @@ USE_HAL_I2C_FALLBACK = yes
 
 SRC += bluetooth/ch582f_ajazz.c
 
-# Dashboard graphics: splash, big clock font (Iosevka 30), small status font
-# (Roboto Mono 20), and the top-row Mac/Win + connection icons.
-# Generated from the source PNGs by res/mkraw.py --embed (RGB565 tiles).
-SRC += graphics/res/lcd_assets.c
+# Dashboard graphics now live in EXTERNAL FLASH, not firmware. Generate the blob
+# with `python3 graphics/res/mkraw.py --flash` and upload it once per keyboard:
+#   ak820ctl flash write 0x0CE0000 graphics/res/flash_assets.bin
+# The firmware reads the index at boot (flash_assets_init) and DMA-draws by id.
 
 SRC += graphics/display.c
 SRC += rtc/rtc.c

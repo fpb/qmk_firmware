@@ -238,12 +238,22 @@ enum {
     FC_CRC32        = 0x06,  // addr[3], len[3]  -> crc[4]
     FC_STATUS       = 0x07,  // -> busy[1]
     FC_UNLOCK       = 0x08,  // on[1]  (animation slots)
+    FC_CRC_NEXT     = 0x09,  // continue a running CRC -> crc[4] when done
     // status codes returned in data[3]
     FS_OK           = 0x00,
     FS_BUSY         = 0x01,  // chip busy -- resend this packet
     FS_REFUSED      = 0x02,  // write floor / locked / animation owns the bus
     FS_BADARG       = 0x03,
+    FS_MORE         = 0x04,  // CRC still running -- send FC_CRC_NEXT
 };
+
+// CRC is computed in slices. Reading a whole range inside one HID callback
+// blocks the matrix scan for the entire read -- a 184 KB verify measured a drop
+// from ~1396 Hz to ~300 Hz. Everything else in this channel is non-blocking, so
+// the CRC must be too: each call folds at most CRC_SLICE bytes (~0.3 ms of SPI)
+// and returns FS_MORE until the range is consumed.
+#define CRC_SLICE 1024u
+static uint32_t crc_addr, crc_left, crc_acc;
 
 // Streaming write state. Bytes accumulate here until a 256-byte page boundary,
 // because the chip WRAPS rather than continuing when a program crosses one.
@@ -324,9 +334,20 @@ static void flash_command(uint8_t *data, uint8_t length) {
         case FC_CRC32: {
             uint32_t len = ((uint32_t)p[3] << 16) | ((uint32_t)p[4] << 8) | p[5];
             if (!len)                       { data[3] = FS_BADARG;  return; }
-            uint32_t c = flash_crc32(a, len);
+            crc_addr = a; crc_left = len; crc_acc = 0xFFFFFFFFu;
+        }
+        /* fall through: fold the first slice immediately */
+        case FC_CRC_NEXT: {
+            if (!crc_left)                  { data[3] = FS_BADARG;  return; }
+            uint32_t n = crc_left < CRC_SLICE ? crc_left : CRC_SLICE;
+            crc_acc   = flash_crc32_acc(crc_acc, crc_addr, n);
+            crc_addr += n;
+            crc_left -= n;
+            if (crc_left) { data[3] = FS_MORE; return; }
+            uint32_t c = ~crc_acc;
             data[3] = FS_OK;
-            data[4] = c >> 24; data[5] = c >> 16; data[6] = c >> 8; data[7] = c;
+            data[4] = (uint8_t)(c >> 24); data[5] = (uint8_t)(c >> 16);
+            data[6] = (uint8_t)(c >> 8);  data[7] = (uint8_t)c;
             return;
         }
         default:

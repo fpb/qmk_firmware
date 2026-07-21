@@ -24,8 +24,12 @@
 #define COL_FG          0xFFFF   // white text
 
 // Font blobs (Iosevka, mono 1bpp).
-#define FONT_CLOCK      (&font_iosevka_regular_30)   // big clock
-#define FONT_STATUS     (&font_iosevka_medium_20)    // small status text
+// Fonts and images now live in external flash and are DMA-drawn; these are
+// ids into the index that flash_assets_init() reads at boot. The full 95-glyph
+// atlases are used, so EMBED_CHARSET and its "letters silently draw nothing"
+// trap are gone.
+#define FONT_CLOCK      ASSET_IOSEVKA_REGULAR_30   // big clock
+#define FONT_STATUS     ASSET_IOSEVKA_MEDIUM_20    // small status text
 
 // Bottom row: y position of the wireless status line.
 #define STATUS_Y 106
@@ -100,14 +104,14 @@ void draw_clock(void) {
 #endif
     if (strcmp(time_str, last_time) != 0) {
         uint8_t  n       = (uint8_t)strlen(time_str);        // 8 (HH:MM:SS) or 5 (HH:MM)
-        uint16_t total_w = lcd_text_width(FONT_CLOCK, time_str);
+        uint16_t total_w = lcd_flash_text_width(FONT_CLOCK, time_str);
         int16_t  x0      = (PANEL_WIDTH - total_w) / 2;
         int16_t  cw      = total_w / n;                      // monospace cell width
         for (uint8_t i = 0; i < n; i++) {
             if (time_str[i] != last_time[i]) {
                 int16_t cx = x0 + i * cw;
                 char ch[2] = {time_str[i], 0};
-                lcd_draw_text(cx, CLOCK_Y, FONT_CLOCK, ch);
+                lcd_draw_flash_text(FONT_CLOCK, cx, CLOCK_Y, ch);
             }
         }
         strcpy(last_time, time_str);
@@ -120,8 +124,8 @@ void draw_clock(void) {
         char date_str[8];
         snprintf(date_str, sizeof(date_str), "%02u/%02u",
                  (unsigned)shown.day, (unsigned)shown.month);
-        uint16_t w = lcd_text_width(FONT_STATUS, date_str);
-        lcd_draw_text(PANEL_WIDTH - 1 - w, 2, FONT_STATUS, date_str);
+        uint16_t w = lcd_flash_text_width(FONT_STATUS, date_str);
+        lcd_draw_flash_text(FONT_STATUS, PANEL_WIDTH - 1 - w, 2, date_str);
     }
 
     clock_force_repaint = false; // consumed by both the time and date above
@@ -137,12 +141,12 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
     clock_force_repaint = true;
 
     // Mac/Windows icon (top-left).
-    lcd_draw_image(mac_mode ? &img_apple_icon_24x24 : &img_windows_icon_24x24, 0, 0);
+    lcd_draw_flash_image(mac_mode ? ASSET_APPLE_ICON_24X24 : ASSET_WINDOWS_ICON_24X24, 0, 0);
 
     // Connection icon.
-    if (connection_mode == CONN_MODE_WIRED)          lcd_draw_image(&img_cable_icon_24x24, 32, 0);
-    else if (connection_mode == CONN_MODE_BLUETOOTH) lcd_draw_image(&img_bluetooth_icon_24x24, 32, 0);
-    else if (connection_mode == CONN_MODE_2_4G)      lcd_draw_image(&img_2_4_g_icon_24x24, 32, 0);
+    if (connection_mode == CONN_MODE_WIRED)          lcd_draw_flash_image(ASSET_CABLE_ICON_24X24, 32, 0);
+    else if (connection_mode == CONN_MODE_BLUETOOTH) lcd_draw_flash_image(ASSET_BLUETOOTH_ICON_24X24, 32, 0);
+    else if (connection_mode == CONN_MODE_2_4G)      lcd_draw_flash_image(ASSET_2_4_G_ICON_24X24, 32, 0);
 
     draw_clock();
     draw_status(true);   // battery + channel digit over the cleared screen
@@ -155,7 +159,19 @@ bool display_init_kb(void) {
 
     // Splash logo, held until the deferred dashboard repaint below.
     lcd_fill_rect(0, 0, PANEL_WIDTH - 1, PANEL_HEIGHT - 1, COL_BG);
-    lcd_draw_image(&img_sonixqmk, 0, 0);
+    // All art lives in external flash now, so nothing can be drawn until the
+    // index is read. An unprovisioned keyboard therefore shows a BLANK panel and
+    // says so on the console -- there is no embedded fallback left to draw with,
+    // which is the whole point (it reclaimed ~32KB of firmware). Provision with:
+    //   ak820ctl flash write 0x0CE0000 graphics/res/flash_assets.bin
+    if (flash_assets_init()) {
+        dprintf("[assets] index ok, %u entries\n", flash_assets_count());
+        lcd_draw_flash_image(ASSET_SONIXQMK, 0, 0);
+    } else {
+        dprintf("[assets] NO VALID INDEX at 0x%06lX -- panel stays blank.\n"
+                "[assets] provision with: ak820ctl flash write 0x%06lX flash_assets.bin\n",
+                (unsigned long)FLASH_ASSET_BASE, (unsigned long)FLASH_ASSET_BASE);
+    }
 
     display_backlight_init();
 
@@ -208,7 +224,7 @@ static void draw_conn_number(bool force) {
     lcd_fill_rect(CONN_NUM_X, 0, CONN_NUM_X + CONN_NUM_W, CONN_ICON_W - 1, COL_BG);
     if (c) {
         char s[2] = {c, 0};
-        lcd_draw_text(CONN_NUM_X, 2, FONT_STATUS, s);
+        lcd_draw_flash_text(FONT_STATUS, CONN_NUM_X, 2, s);
     }
 }
 
@@ -225,8 +241,8 @@ static void draw_battery(bool force) {
     if (batt <= 100) {
         char bbuf[8];
         snprintf(bbuf, sizeof(bbuf), "%u%%", batt);
-        uint16_t w = lcd_text_width(FONT_STATUS, bbuf);
-        lcd_draw_text(PANEL_WIDTH - 1 - w, STATUS_Y, FONT_STATUS, bbuf);
+        uint16_t w = lcd_flash_text_width(FONT_STATUS, bbuf);
+        lcd_draw_flash_text(FONT_STATUS, PANEL_WIDTH - 1 - w, STATUS_Y, bbuf);
     }
 }
 
@@ -256,29 +272,29 @@ void display_housekeeping_task(void) {
 void display_draw_mac_logo(void) {
     mac_mode = true;
     if (splash_cleared && !display_paused)
-        lcd_draw_image(&img_apple_icon_24x24, 0, 0);
+        lcd_draw_flash_image(ASSET_APPLE_ICON_24X24, 0, 0);
 }
 
 void display_draw_windows_logo(void) {
     mac_mode = false;
     if (splash_cleared && !display_paused)
-        lcd_draw_image(&img_windows_icon_24x24, 0, 0);
+        lcd_draw_flash_image(ASSET_WINDOWS_ICON_24X24, 0, 0);
 }
 
 void display_draw_usb_logo(void) {
     connection_mode = CONN_MODE_WIRED;
     if (splash_cleared && !display_paused)
-        lcd_draw_image(&img_cable_icon_24x24, 32, 0);
+        lcd_draw_flash_image(ASSET_CABLE_ICON_24X24, 32, 0);
 }
 
 void display_draw_bluetooth_logo(void) {
     connection_mode = CONN_MODE_BLUETOOTH;
     if (splash_cleared && !display_paused)
-        lcd_draw_image(&img_bluetooth_icon_24x24, 32, 0);
+        lcd_draw_flash_image(ASSET_BLUETOOTH_ICON_24X24, 32, 0);
 }
 
 void display_draw_2_4_g_logo(void) {
     connection_mode = CONN_MODE_2_4G;
     if (splash_cleared && !display_paused)
-        lcd_draw_image(&img_2_4_g_icon_24x24, 32, 0);
+        lcd_draw_flash_image(ASSET_2_4_G_ICON_24X24, 32, 0);
 }
