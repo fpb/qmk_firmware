@@ -21,6 +21,28 @@ enum wireless_mode {
 };
 static uint8_t wireless_mode = WL_MODE_USB;
 
+// Persisted keyboard config (EEPROM kb datablock; 4 bytes reserved, room to grow).
+typedef struct __attribute__((packed)) {
+    uint8_t bt_profile;   // last BT slot selected (CH582_PROFILE_BT_1..3)
+    uint8_t _pad[3];
+} kb_config_t;
+static kb_config_t kb_config;
+
+// Last BT slot the user selected. Entering BT mode used to hardcode slot 1, so
+// leaving BT for USB/2.4G and coming back silently dropped you onto slot 1
+// whatever you had been connected to. Persisted to EEPROM so it survives mode
+// switches and power cycles.
+static ch582_profile_t last_bt_profile = CH582_PROFILE_BT_1;
+
+// Write the remembered slot back only when it actually changed -- wear-leveling
+// on internal flash is cheap but not free, and slot changes are user-initiated.
+static void save_bt_profile(ch582_profile_t p) {
+    if (p == last_bt_profile) return;
+    last_bt_profile     = p;
+    kb_config.bt_profile = (uint8_t)p;
+    eeconfig_update_kb_datablock(&kb_config, 0, sizeof(kb_config));
+}
+
 // Fn+P long-press tracking: pairing only starts after a sustained hold, and
 // only while in a wireless mode.
 #define BT_PAIR_HOLD_MS 1000
@@ -47,6 +69,18 @@ void early_hardware_init_post(void) {
     // Set up GPIO pins for the charging status inputs
     gpio_set_pin_input_high(CHARGE_CHRG_PIN);   // input with pull-up
     gpio_set_pin_input_high(CHARGE_STDBY_PIN);  // input with pull-up
+
+    // Restore persisted config. A fresh/invalid EEPROM zero-fills the block, so a
+    // 0 (or out-of-range) bt_profile falls back to slot 1.
+    eeconfig_read_kb_datablock(&kb_config, 0, sizeof(kb_config));
+    if (kb_config.bt_profile >= CH582_PROFILE_BT_1 && kb_config.bt_profile <= CH582_PROFILE_BT_3)
+        last_bt_profile = (ch582_profile_t)kb_config.bt_profile;
+
+    // dip_switch_init() runs BEFORE this hook, so its boot-time BT selection used
+    // the default slot (EEPROM had not been read yet). Now that we have the saved
+    // slot, re-select it if we booted with the slider already on Bluetooth.
+    if (wireless_mode == WL_MODE_BT)
+        ch582_set_profile(last_bt_profile);
 
     // Bring the bit-banged I2C lines to idle before the first RTC read.
     rtc_init();
@@ -87,7 +121,7 @@ void early_hardware_init_post(void) {
         // module which radio to use.
         if (bt_on) {
             wireless_mode = WL_MODE_BT;
-            ch582_set_profile(CH582_PROFILE_BT_1);  // BT mode: default to slot 1
+            ch582_set_profile(last_bt_profile);  // resume the slot last selected
             connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
             display_draw_bluetooth_logo();
         } else if (g24_on) {
@@ -120,21 +154,24 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             return false;
         case BT1:  // Fn+Q -> select BT slot 1 (BT mode only)
             if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                ch582_set_profile(CH582_PROFILE_BT_1);
+                save_bt_profile(CH582_PROFILE_BT_1);
+                ch582_set_profile(last_bt_profile);
                 connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
                 display_draw_bluetooth_logo();
             }
             return false;
         case BT2:  // Fn+W -> select BT slot 2 (BT mode only)
             if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                ch582_set_profile(CH582_PROFILE_BT_2);
+                save_bt_profile(CH582_PROFILE_BT_2);
+                ch582_set_profile(last_bt_profile);
                 connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
                 display_draw_bluetooth_logo();
             }
             return false;
         case BT3:  // Fn+E -> select BT slot 3 (BT mode only)
             if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                ch582_set_profile(CH582_PROFILE_BT_3);
+                save_bt_profile(CH582_PROFILE_BT_3);
+                ch582_set_profile(last_bt_profile);
                 connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
                 display_draw_bluetooth_logo();
             }

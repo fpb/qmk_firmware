@@ -38,3 +38,9 @@
 #define QUANTUM_PAINTER_SUPPORTS_NATIVE_COLORS TRUE
 #define QUANTUM_PAINTER_SUPPORTS_256_PALETTE TRUE
 #define QUANTUM_PAINTER_DISPLAY_TIMEOUT 0
+// Persist a small keyboard-specific config block in EEPROM. On SN32F290 QMK's
+// default "vendor" EEPROM driver is wear-leveling backed by MCU internal flash.
+// Currently: the last Bluetooth slot, so it survives power cycles and mode
+// switches. Bump EECONFIG_KB_DATA_VERSION if the layout changes.
+#define EECONFIG_KB_DATA_SIZE    4
+#define EECONFIG_KB_DATA_VERSION 1
