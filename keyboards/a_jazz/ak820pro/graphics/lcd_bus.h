@@ -33,6 +33,25 @@ void lcd_blit_flash_probe(uint32_t src, uint16_t w, uint16_t h);
 // call it before any blit outside the animation path.
 void lcd_flash_init(void);
 
+// --- external flash WRITE path (Stage D provisioning) -----------------------
+// Device-asynchronous: the command returns as soon as it is on the wire, then
+// the chip is busy on its own (page program ~1-3 ms, sector erase 50-300 ms).
+// Poll flash_busy() rather than waiting -- a 300 ms stall wrecks the matrix scan.
+// All of these refuse to run while anim_active(), since SPI1 feeds the DMA.
+#define FLASH_ASSET_BASE 0x0CE0000u   // 3.12 MB erased since manufacture
+
+bool     flash_busy(void);
+bool     flash_erase_sector(uint32_t addr);                              // 4K
+bool     flash_page_program(uint32_t addr, const uint8_t *src, uint32_t len);
+void     flash_read_bytes(uint32_t addr, uint8_t *dst, uint32_t len);
+uint32_t flash_crc32(uint32_t addr, uint32_t len);
+uint32_t flash_jedec_id(void);
+// Writes are refused below FLASH_ASSET_BASE unless unlocked, and even then only
+// inside a known animation slot. The stock LCD assets are never writable: our
+// only dump of them has read damage, so they cannot be restored.
+bool     flash_writable(uint32_t addr, uint32_t len);
+void     flash_set_unlocked(bool on);
+
 // CPU, blocking: RGB565 tile from a firmware/RAM array -> panel rect.
 void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 

@@ -222,6 +222,141 @@ __attribute__((unused)) static uint8_t spi1_rw(uint8_t out) {
     while (SN_SPI1->STAT_b.RX_EMPTY) { if (++n > 2000u) break; }
     return (uint8_t)SN_SPI1->DATA;
 }
+// ---------------------------------------------------------------------------
+// External flash WRITE path (Stage D provisioning)
+//
+// Everything here is non-blocking with respect to the *device*: a command is
+// issued over SPI (microseconds) and the chip then goes busy on its own -- a
+// page program takes ~1-3 ms, a 4K sector erase 50-300 ms. Blocking the matrix
+// scan for 300 ms is not acceptable, so callers must poll flash_busy() instead
+// of waiting here. Every SPI-level spin below is bounded; an unbounded one
+// hangs the keyboard before USB enumerates.
+// ---------------------------------------------------------------------------
+#define FLASH_CMD_WREN      0x06
+#define FLASH_CMD_RDSR      0x05
+#define FLASH_CMD_PAGE_PROG 0x02
+#define FLASH_CMD_SEC_ERASE 0x20
+#define FLASH_CMD_JEDEC     0x9F
+#define FLASH_PAGE          256u
+#define FLASH_SECTOR        4096u
+#define FLASH_CHIP_SIZE     0x1000000u   // PY25Q128HA, 16MB
+
+// Write policy. The stock LCD assets below 0x1AA000 are effectively
+// irreplaceable (our only dump of them has read damage), so they are never
+// writable. The animation slots are stock-owned but legitimately rewritable,
+// behind an explicit unlock. Our own Stage D assets live in the 3.12 MB that
+// has been erased (0xFF) since manufacture and is always writable.
+#define FLASH_ASSET_BASE    0x0CE0000u
+static bool flash_unlocked = false;
+
+void flash_set_unlocked(bool on) { flash_unlocked = on; }
+
+// Animation slots seen in stock firmware: V1.13 boot/user, V1.14 boot/user.
+static bool in_anim_slot(uint32_t a, uint32_t len) {
+    static const uint32_t slots[] = {0x1AA000u, 0x200000u, 0x38B000u, 0x540000u};
+    for (uint8_t i = 0; i < 4; i++) {
+        // Slots are sized generously: header + up to 132 frames.
+        if (a >= slots[i] && a + len <= slots[i] + 0x100u + 132u * 0x8000u) return true;
+    }
+    return false;
+}
+
+bool flash_writable(uint32_t addr, uint32_t len) {
+    if (!len || addr >= FLASH_CHIP_SIZE || len > FLASH_CHIP_SIZE - addr) return false;
+    if (addr >= FLASH_ASSET_BASE) return true;            // our region, always
+    return flash_unlocked && in_anim_slot(addr, len);     // stock slots, on request
+}
+
+static void flash_cmd_addr(uint8_t cmd, uint32_t a) {
+    gpio_write_pin(FLASH_CS, 0);
+    spi1_xfer(cmd);
+    spi1_xfer((a >> 16) & 0xFF); spi1_xfer((a >> 8) & 0xFF); spi1_xfer(a & 0xFF);
+}
+
+static uint8_t flash_status(void) {
+    gpio_write_pin(FLASH_CS, 0);
+    spi1_xfer(FLASH_CMD_RDSR);
+    uint8_t s = spi1_rw(0xFF);
+    gpio_write_pin(FLASH_CS, 1);
+    return s;
+}
+
+// True while a program/erase is still running (status bit 0 = WIP).
+bool flash_busy(void) {
+    lcd_flash_init();
+    return (flash_status() & 0x01) != 0;
+}
+
+static void flash_wren(void) {
+    gpio_write_pin(FLASH_CS, 0);
+    spi1_xfer(FLASH_CMD_WREN);
+    gpio_write_pin(FLASH_CS, 1);
+}
+
+uint32_t flash_jedec_id(void) {
+    lcd_flash_init();
+    gpio_write_pin(FLASH_CS, 0);
+    spi1_xfer(FLASH_CMD_JEDEC);
+    uint32_t id = ((uint32_t)spi1_rw(0xFF) << 16);
+    id |= ((uint32_t)spi1_rw(0xFF) << 8);
+    id |= spi1_rw(0xFF);
+    gpio_write_pin(FLASH_CS, 1);
+    return id;
+}
+
+void flash_read_bytes(uint32_t addr, uint8_t *dst, uint32_t len) {
+    lcd_flash_init();
+    flash_cmd_addr(FLASH_CMD_READ, addr);
+    for (uint32_t i = 0; i < len; i++) dst[i] = spi1_rw(0xFF);
+    gpio_write_pin(FLASH_CS, 1);
+}
+
+// Erase one 4K sector. Returns false if the address is not writable, the chip
+// is still busy, or the animation owns the bus. The chip stays busy for
+// 50-300 ms afterwards -- poll flash_busy().
+bool flash_erase_sector(uint32_t addr) {
+    if (anim_active()) return false;                 // SPI1 is shared with the DMA
+    addr &= ~(FLASH_SECTOR - 1u);
+    if (!flash_writable(addr, FLASH_SECTOR)) return false;
+    lcd_flash_init();
+    if (flash_busy()) return false;
+    flash_wren();
+    flash_cmd_addr(FLASH_CMD_SEC_ERASE, addr);
+    gpio_write_pin(FLASH_CS, 1);
+    return true;
+}
+
+// Program up to one 256-byte page. The write must not cross a page boundary --
+// the chip wraps to the start of the page instead of continuing, silently
+// corrupting data, so that case is rejected rather than split here.
+bool flash_page_program(uint32_t addr, const uint8_t *src, uint32_t len) {
+    if (anim_active()) return false;
+    if (!len || len > FLASH_PAGE) return false;
+    if ((addr & (FLASH_PAGE - 1u)) + len > FLASH_PAGE) return false;
+    if (!flash_writable(addr, len)) return false;
+    lcd_flash_init();
+    if (flash_busy()) return false;
+    flash_wren();
+    flash_cmd_addr(FLASH_CMD_PAGE_PROG, addr);
+    for (uint32_t i = 0; i < len; i++) spi1_xfer(src[i]);
+    gpio_write_pin(FLASH_CS, 1);
+    return true;
+}
+
+// CRC32 (IEEE, reflected) over a flash range, so the host can verify a large
+// upload without reading megabytes back over 29-byte HID packets.
+uint32_t flash_crc32(uint32_t addr, uint32_t len) {
+    lcd_flash_init();
+    uint32_t crc = 0xFFFFFFFFu;
+    flash_cmd_addr(FLASH_CMD_READ, addr);
+    for (uint32_t i = 0; i < len; i++) {
+        crc ^= spi1_rw(0xFF);
+        for (uint8_t b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320u & (-(int32_t)(crc & 1)));
+    }
+    gpio_write_pin(FLASH_CS, 1);
+    return ~crc;
+}
+
 static volatile bool blit_done = true;
 
 void Vector58(void) {
