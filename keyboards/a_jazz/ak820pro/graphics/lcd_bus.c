@@ -31,11 +31,26 @@ extern void display_set_paused(bool paused);   // graphics/display.c
 #define MADCTL_270  0xA8
 #define MADCTL_ANIM MADCTL_270
 
-// Mario animation
+// Animation slot. The header at ANIM_BASE is the stock format we reverse-engineered:
+//   byte 0        = frame count
+//   bytes 1..n    = per-frame duration, one byte each
+//   ...           = padding to ANIM_HDR (0x00 when stock-written, 0xFF when the
+//                   AJAZZ uploader wrote it into freshly erased flash)
+// Frames follow at ANIM_HDR, ANIM_STRIDE each. Nothing validates this -- there is
+// no magic or checksum -- so a stale slot yields garbage rather than "no animation".
 #define ANIM_BASE   0x540000u
 #define ANIM_HDR    0x100u
 #define ANIM_STRIDE 0x8000u
-#define ANIM_COUNT  8
+#define ANIM_MAX    132u          // largest frame count seen in stock flash
+
+// Playback is paced by the 10 Hz housekeeping slot -- one frame per 100 ms --
+// which matches stock speed by observation. The header's per-frame duration
+// bytes are deliberately IGNORED: disassembly of V1.13's player shows it never
+// reads them either (only hdr[0], the count), and they are uniform in every
+// stock animation we have seen (0x2D throughout Mario, 0x14 throughout the
+// 125-frame one) -- exactly what an unread field looks like. What actually sets
+// the stock frame rate was not identified; 100 ms is fitted to observation, not
+// derived.
 
 #define NVIC_ISER ((volatile uint32_t *)0xE000E100)
 #define NVIC_ICER ((volatile uint32_t *)0xE000E180)
@@ -526,8 +541,19 @@ bool lcd_blit_busy(void) { return !blit_done; }
 // ---------------------------------------------------------------------------
 // Animation player
 // ---------------------------------------------------------------------------
-static bool    anim_on  = false;
-static uint8_t anim_idx = 0;
+static bool     anim_on  = false;
+static uint8_t  anim_idx = 0;
+static uint8_t  anim_count = 0;              // from the header, 0 = nothing to play
+
+// Read the slot header. Returns false if it describes nothing playable, which is
+// the normal state for an empty or never-provisioned slot.
+static bool anim_read_header(void) {
+    uint8_t hdr;
+    lcd_flash_init();
+    flash_read_bytes(ANIM_BASE, &hdr, 1);
+    anim_count = hdr > ANIM_MAX ? 0 : hdr;
+    return anim_count != 0;
+}
 
 // True while the flash-animation player owns the bus. The bit-banged RTC I2C (SCL=A14,
 // SDA=A15) shares port A with the flash SPI1 pins (SCK=A12, CS=A13); its open-drain
@@ -562,6 +588,11 @@ void anim_toggle(void) {
     if (!anim_on) {
         display_set_paused(true);           // stop QP touching the bus
         set_madctl(MADCTL_ANIM);            // frames authored for this orientation
+        if (!anim_read_header()) {          // empty slot: nothing to play
+            set_madctl(MADCTL_270);         // undo the orientation change
+            display_set_paused(false);
+            return;
+        }
         anim_on = true; anim_idx = 0;
         blit_arm(ANIM_BASE + ANIM_HDR);
     } else {
@@ -578,8 +609,9 @@ void anim_toggle(void) {
         display_set_paused(false);          // resume + full repaint
     }
 }
+// Called from the 10 Hz housekeeping slot, so one frame per 100 ms.
 void anim_task(void) {
-    if (!anim_on || !blit_done) return;     // blit_arm blocks until done, so this just paces frames
-    anim_idx = (anim_idx + 1) % ANIM_COUNT;
+    if (!anim_on || !blit_done) return;     // previous frame still in flight
+    anim_idx = (uint8_t)((anim_idx + 1) % anim_count);
     blit_arm(ANIM_BASE + ANIM_HDR + (uint32_t)anim_idx * ANIM_STRIDE);
 }

@@ -427,7 +427,7 @@ void housekeeping_task_kb(void) {
 
         update_leds();
         if (!anim_active()) rtc_task();   // RTC I2C (port A) glitches the flash SPI1 pins (A12/A13) mid-DMA
-        anim_task();
+        anim_task();                      // one animation frame per 100 ms
         display_housekeeping_task();
     }
 
