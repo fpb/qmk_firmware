@@ -166,6 +166,25 @@ void lcd_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t 
 // source-address register -- so RAM-resident art cannot be DMA'd and is CPU-pushed here
 // (pipelined, ~wire speed). Only flash-resident art can use lcd_blit_flash(). See
 // docs/LCD_FLASH_LAYER.md.
+// Clear a rect by DMA instead of pushing pixels from the CPU.
+//
+// The stock image keeps a 128x128 all-black frame at flash 0x000000 -- exactly
+// 32768 bytes -- precisely so the panel can be cleared with zero CPU in the data
+// path. A full-screen CPU fill is 32 KB through tx_pipe, ~11-13 ms of blocking;
+// this is a fire-and-forget DMA.
+//
+// It works for ANY rect, not just full-screen: the source is uniform, so the
+// usual "a sub-rect of a wide image is strided and undrawable" problem does not
+// apply -- any contiguous run of w*h*2 zero bytes is the correct source.
+#define FLASH_BLACK_FRAME 0x000000u
+
+void lcd_clear_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    if (!w || !h) return;
+    if ((uint32_t)w * h * 2u > 0x8000u) return;      // larger than the black frame
+    lcd_blit_flash(FLASH_BLACK_FRAME, x, y, w, h);
+    for (uint32_t g = 0; g < 4000000u && lcd_blit_busy(); g++) { __asm__ volatile("nop"); }
+}
+
 void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     if (!px || !w || !h) return;
     lcd_window(x, y, x + w - 1, y + h - 1);
@@ -469,6 +488,12 @@ void Vector58(void) {
 // the animation orientation (MADCTL_ANIM) will not match the dashboard's (MADCTL_270).
 void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     if (!w || !h) return;
+    // SPI1 must be up or the DMA has a dead source: it never completes, the
+    // caller spins out its timeout, and SPI0 is left in DMA mode with FLASH_CS
+    // asserted -- which then corrupts the next flash read. This used to be the
+    // caller's job and the ordering was load-bearing but invisible (it only
+    // worked because flash_assets_init() happened to run first). Cheap: a bool.
+    lcd_flash_init();
     uint32_t bytes = (uint32_t)w * (uint32_t)h * 2u;
     blit_done = false;
     // Fully re-init SPI0 so the DMA sees a pristine peripheral (SPIEN=0 + FRESET re-latches

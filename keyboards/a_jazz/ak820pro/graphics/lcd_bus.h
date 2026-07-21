@@ -84,3 +84,7 @@ void lcd_blit_ram(const uint16_t *px, uint16_t x, uint16_t y, uint16_t w, uint16
 // pre-rendered RGB565 tiles from res/lcd_assets.h -- no decode, no blending. Colours
 // are baked into the tiles, so there are no fg/bg arguments.
 void lcd_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
+// Clear to black by DMA from the 128x128 black frame the stock image keeps at
+// flash 0x000000. Zero CPU in the data path, vs ~11-13 ms for a full-screen CPU
+// fill. Works for any rect: the source is uniform, so striding is irrelevant.
+void lcd_clear_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h);

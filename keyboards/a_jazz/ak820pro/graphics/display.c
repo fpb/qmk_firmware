@@ -135,7 +135,7 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
     splash_cleared = true;
 
     // Clear background.
-    lcd_fill_rect(0, 0, PANEL_WIDTH - 1, PANEL_HEIGHT - 1, COL_BG);
+    lcd_clear_rect(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
 
     // Full repaint: force the clock and date to redraw over the cleared screen.
     clock_force_repaint = true;
@@ -158,7 +158,7 @@ bool display_init_kb(void) {
     lcd_init();          // GC9107 bring-up, rotation 270
 
     // Splash logo, held until the deferred dashboard repaint below.
-    lcd_fill_rect(0, 0, PANEL_WIDTH - 1, PANEL_HEIGHT - 1, COL_BG);
+    lcd_clear_rect(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
     // All art lives in external flash now, so nothing can be drawn until the
     // index is read. An unprovisioned keyboard therefore shows a BLANK panel and
     // says so on the console -- there is no embedded fallback left to draw with,
@@ -221,7 +221,7 @@ static void draw_conn_number(bool force) {
     last_c = c;
 
     // Clear the digit cell, then draw.
-    lcd_fill_rect(CONN_NUM_X, 0, CONN_NUM_X + CONN_NUM_W, CONN_ICON_W - 1, COL_BG);
+    lcd_clear_rect(CONN_NUM_X, 0, CONN_NUM_W + 1, CONN_ICON_W);
     if (c) {
         char s[2] = {c, 0};
         lcd_draw_flash_text(FONT_STATUS, CONN_NUM_X, 2, s);
@@ -236,7 +236,7 @@ static void draw_battery(bool force) {
     last_batt = batt;
 
     // Clear the bottom strip.
-    lcd_fill_rect(0, STATUS_Y, PANEL_WIDTH - 1, PANEL_HEIGHT - 1, COL_BG);
+    lcd_clear_rect(0, STATUS_Y, PANEL_WIDTH, PANEL_HEIGHT - STATUS_Y);
 
     if (batt <= 100) {
         char bbuf[8];
