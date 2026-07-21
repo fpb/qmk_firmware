@@ -41,7 +41,12 @@ extern void display_set_paused(bool paused);   // graphics/display.c
 #define ANIM_BASE   0x540000u
 #define ANIM_HDR    0x100u
 #define ANIM_STRIDE 0x8000u
-#define ANIM_MAX    132u          // largest frame count seen in stock flash
+// Frame-count ceiling, derived rather than guessed: the slot grows upward from
+// ANIM_BASE and must not reach the asset region. hdr[0] is one byte, so 255 is
+// the format's own ceiling; whichever is smaller wins.
+//   (0x0CE0000 - 0x540000 - 0x100) / 0x8000 = 244
+#define ANIM_ROOM   ((FLASH_ASSET_BASE - ANIM_BASE - ANIM_HDR) / ANIM_STRIDE)
+#define ANIM_MAX    (ANIM_ROOM < 255u ? ANIM_ROOM : 255u)
 
 // Playback is paced by the 10 Hz housekeeping slot -- one frame per 100 ms --
 // which matches stock speed by observation. The header's per-frame duration
