@@ -169,28 +169,30 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         case RGBM_SPI:  if (record->event.pressed) rgb_matrix_increase_speed(); return false;
         case RGBM_SPD:  if (record->event.pressed) rgb_matrix_decrease_speed(); return false;
 #endif
-        case BT1:  // Fn+Q -> select BT slot 1 (BT mode only)
-            if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                save_bt_profile(CH582_PROFILE_BT_1);
-                ch582_set_profile(last_bt_profile);
-                connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-                display_draw_bluetooth_logo();
-            }
-            return false;
-        case BT2:  // Fn+W -> select BT slot 2 (BT mode only)
-            if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                save_bt_profile(CH582_PROFILE_BT_2);
-                ch582_set_profile(last_bt_profile);
-                connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-                display_draw_bluetooth_logo();
-            }
-            return false;
-        case BT3:  // Fn+E -> select BT slot 3 (BT mode only)
-            if (record->event.pressed && wireless_mode == WL_MODE_BT) {
-                save_bt_profile(CH582_PROFILE_BT_3);
-                ch582_set_profile(last_bt_profile);
-                connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
-                display_draw_bluetooth_logo();
+        /* BT slot keys use the @isuua/edthu devctrl model: TAP = select the slot
+         * (A6 <slot>, reconnect the existing bond); HOLD = select + pair (adds
+         * A6 0x51 on the held slot). Select happens on press for instant feedback;
+         * the pair is added if the key is still held at BT_PAIR_HOLD_MS. This
+         * replaces needing a separate pair key, though Fn+P still works. */
+        case BT1:  // Fn+Q -> tap: select BT1 | hold: pair BT1
+        case BT2:  // Fn+W -> tap: select BT2 | hold: pair BT2
+        case BT3:  // Fn+E -> tap: select BT3 | hold: pair BT3
+            if (record->event.pressed) {
+                if (wireless_mode == WL_MODE_BT) {
+                    ch582_profile_t slot = keycode == BT1 ? CH582_PROFILE_BT_1
+                                         : keycode == BT2 ? CH582_PROFILE_BT_2
+                                                          : CH582_PROFILE_BT_3;
+                    save_bt_profile(slot);
+                    ch582_set_profile(last_bt_profile);          // tap action: select
+                    connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
+                    display_draw_bluetooth_logo();
+                    bt_pair_timer = timer_read();                // arm hold-to-pair
+                    bt_pair_armed = true;
+                }
+            } else if (bt_pair_armed) {
+                bt_pair_armed = false;
+                if (timer_elapsed(bt_pair_timer) >= BT_PAIR_HOLD_MS)
+                    ch582_enter_pairing();                        // hold action: pair active slot
             }
             return false;
         case BT24G:  // Fn+R -> select 2.4G (2.4G mode only)
