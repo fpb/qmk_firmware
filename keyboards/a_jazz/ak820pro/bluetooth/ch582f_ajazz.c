@@ -56,6 +56,13 @@ static volatile uint8_t requested_profile = 0;
 /* True while the mode slider is in the USB position (wireless link not in use).
  * Set from the dip-switch handler via ch582_cancel_connect / ch582_set_profile. */
 static volatile bool    usb_mode = false;
+/* True once the module has ACKed anything, i.e. its UART is up and receiving.
+ * Cold boot is the only time it is false (the boot-time slot select can fire
+ * before the CH582F finishes powering up). Used to bound the select retry: we
+ * re-issue the select only until the module is alive, NOT until it connects --
+ * re-selecting a live module restarts its advertising and starves slow (macOS)
+ * reconnects, which need the peripheral to keep advertising uninterrupted. */
+static volatile bool    module_alive = false;
 static uint16_t         last_attempt_time = 0;
 /* Last time a battery poll (A6 53) was sent. */
 static uint16_t         last_battery_poll = 0;
@@ -163,20 +170,84 @@ void bluetooth_send_consumer(uint16_t usage) {
 
 void bluetooth_send_system(uint16_t usage) {}
 
+/* --- reliable (ACK'd, retrying) TX queue --------------------------------------
+ * The module ACKs every frame we send with `61 0D 0A`. Sending once and ignoring
+ * that ACK means a dropped/checksum-rejected frame is simply lost -- for a key
+ * RELEASE that strands the key and the host auto-repeats it (the sporadic BT
+ * stuck-key). Stock (and the open @isuua reference in aliou/keebs,
+ * vendor/edthu-wireless -- the same module protocol) instead queue each frame and
+ * retransmit until the module ACKs. This is a minimal port of that: one frame
+ * in flight at a time, retried on ACK-timeout, popped on ACK. Frames are
+ * idempotent (they carry STATE, not events), so a retransmit is always safe. */
+#define CH582_TXQ_LEN       24
+#define CH582_TX_FRAME_MAX  (TX_MAX_PAYLOAD + 2)
+#ifndef CH582_TX_ACK_TIMEOUT_MS
+#    define CH582_TX_ACK_TIMEOUT_MS 10
+#endif
+#ifndef CH582_TX_MAX_RETRIES
+#    define CH582_TX_MAX_RETRIES 8
+#endif
+
+typedef struct {
+    uint8_t data[CH582_TX_FRAME_MAX];
+    uint8_t len;
+} ch582_tx_frame_t;
+
+static ch582_tx_frame_t tx_q[CH582_TXQ_LEN];
+static uint8_t          tx_head = 0, tx_tail = 0;   /* head = frame in flight / next to send */
+static bool             tx_in_flight = false;
+static uint16_t         tx_sent_time = 0;
+static uint8_t          tx_retries   = 0;
+
+static inline uint8_t tx_next(uint8_t i) { return (uint8_t)((i + 1) % CH582_TXQ_LEN); }
+
+/* Drop the head frame (ACKed or given up) and stop waiting on it. */
+static void ch582_tx_pop(void) {
+    if (tx_head != tx_tail) tx_head = tx_next(tx_head);
+    tx_in_flight = false;
+    tx_retries   = 0;
+}
+
+/* Advance the queue: send the head frame, time out and retransmit, or give up.
+ * Called every ch582_task() (main-loop cadence, sub-ms), so the 10 ms timeout is
+ * honoured with fine granularity. */
+static void ch582_tx_pump(void) {
+    if (tx_in_flight) {
+        if (timer_elapsed(tx_sent_time) < CH582_TX_ACK_TIMEOUT_MS) return;   /* still waiting for ACK */
+        if (++tx_retries > CH582_TX_MAX_RETRIES) { ch582_tx_pop(); return; } /* give up, move on */
+        sdWrite(&CH582_SERIAL_DRIVER, tx_q[tx_head].data, tx_q[tx_head].len); /* retransmit */
+        tx_sent_time = timer_read();
+        return;
+    }
+    if (tx_head == tx_tail) return;                                          /* queue empty */
+    sdWrite(&CH582_SERIAL_DRIVER, tx_q[tx_head].data, tx_q[tx_head].len);
+    tx_sent_time = timer_read();
+    tx_in_flight = true;
+}
+
+/* The module ACKed the in-flight frame -> drop it and let the next one go. Also
+ * the first proof the module's UART is up (see module_alive). */
+static void ch582_tx_ack(void) {
+    module_alive = true;
+    if (tx_in_flight) ch582_tx_pop();
+}
+
 void ch582_send_command(uint8_t cmd, const uint8_t *params, uint8_t param_len) {
-    static uint8_t tx_packet[TX_MAX_PAYLOAD + 2];
     if (param_len > TX_MAX_PAYLOAD) return;
 
-    uint16_t sum  = cmd;
-    tx_packet[0]  = cmd;
+    uint8_t nxt = tx_next(tx_tail);
+    if (nxt == tx_head) return;                 /* queue full -> drop (should not happen at typing rates) */
+
+    ch582_tx_frame_t *f = &tx_q[tx_tail];
+    uint16_t sum = cmd;
+    f->data[0]   = cmd;
     for (uint8_t i = 0; i < param_len; i++) {
-        tx_packet[1 + i] = params[i];
+        f->data[1 + i] = params[i];
         sum += params[i];
     }
-    uint8_t total_len             = param_len + 2;
-    tx_packet[total_len - 1]      = (uint8_t)(sum & 0xFF);
-
-    sdWrite(&CH582_SERIAL_DRIVER, tx_packet, total_len);
+    f->data[param_len + 1] = (uint8_t)(sum & 0xFF);
+    f->len                 = param_len + 2;
+    tx_tail                = nxt;
 }
 
 #if CH582_ACK_FRAMES
@@ -210,8 +281,8 @@ void ch582_enter_pairing(void) {
     uint8_t param       = CH582_PAIR_PARAM;
     is_module_connected = false;
     is_pairing          = true;
-    /* Sent twice, matching stock (and the general 0xA6 retry behaviour). */
-    ch582_send_command(0xA6, &param, 1);
+    /* Sent ONCE, matching the @isuua/edthu reference. Stock repeated it, but the
+     * ACK/retry queue now guarantees delivery, so one is enough. */
     ch582_send_command(0xA6, &param, 1);
 }
 
@@ -285,19 +356,19 @@ void ch582_task(void) {
      *                   it as a "connected" signal. */
     static uint8_t b2 = 0, b1 = 0, b0 = 0;
 
-    /* NOTE: the mode slider is wired directly to the CH582F, so BT/2.4G connection
-     * is driven in hardware. QMK is passive here: it only parses the RX stream.
-     * The old periodic 0xA6 retry created a feedback loop (each select bounced the
-     * link: 61 0D 0A disconnect -> 5B 32 reconnect), making the state flip.
-     *
-     * BUT a *bounded* retry is still needed for cold boot: when the keyboard
-     * powers up directly in BT mode the dip-switch select fires before the
-     * CH582F finishes its own power-up and is dropped, leaving us stuck at
-     * "idle" until the user manually re-selects (Fn+Q). Re-issue the select
-     * ONLY while a connection is requested and not yet established -- gated on
-     * !is_module_connected so it can never bounce a live link. We re-send the
-     * raw 0xA6 (not ch582_set_profile) so the connection flags are untouched. */
-    if (connect_requested && !is_module_connected &&
+    /* Cold-boot-only select retry. The mode slider is wired directly to the
+     * CH582F, so once the module is up it handles advertising/reconnect itself
+     * (like the @isuua/edthu reference, which sends the select ONCE per switch).
+     * We must NOT keep re-issuing the select on a live module: re-selecting
+     * restarts its advertising and starves slow reconnects -- a phone reconnects
+     * in <500 ms and beats the retry, but macOS directed-advertising takes longer
+     * and never completes, so it needed a manual pairing entry. The only case
+     * that genuinely needs a retry is cold boot, where the boot-time select fires
+     * before the CH582F's UART is up and is dropped. So retry ONLY until the
+     * module is alive (has ACKed anything), then stop and let it reconnect at its
+     * own pace. Transient (non-boot) select drops are covered by the ACK/retry
+     * queue instead. */
+    if (connect_requested && !module_alive &&
         timer_elapsed(last_attempt_time) >= CH582_CONNECT_RETRY_MS) {
         last_attempt_time = timer_read();
         uint8_t param = requested_profile;
@@ -313,6 +384,9 @@ void ch582_task(void) {
         last_battery_poll = timer_read();
         ch582_poll_status();
     }
+
+    /* Drive the reliable TX queue: send/retransmit/drop the in-flight frame. */
+    ch582_tx_pump();
 
     uint8_t c;
     uint8_t bytes_processed = 0;
@@ -330,8 +404,10 @@ void ch582_task(void) {
         bool matched = false;
 
         if (b2 == 0x61 && b1 == 0x0D && b0 == 0x0A) {
-            /* Periodic idle heartbeat; emitted while connected AND disconnected,
-             * so it carries no connection state. Don't touch is_module_connected. */
+            /* `61 0D 0A` ("a\r\n") is the per-frame ACK the module returns for what
+             * we send -- NOT a connection signal (it is silent at idle). Use it to
+             * release the in-flight TX frame so the next queued one can go. */
+            ch582_tx_ack();
             matched             = true;
         } else if ((b2 == 0x5A || b2 == 0x5B || b2 == 0x5C) &&
                    b0 == ((uint8_t)(b2 + b1))) {
