@@ -12,6 +12,15 @@ typedef enum {
     CH582_PROFILE_PAIR_24G = 0x35  /* '5' */
 } ch582_profile_t;
 
+/* Wireless connection state, driven by the module's 5B frames. */
+typedef enum {
+    CH582_CONN_IDLE = 0,   /* not attempting (USB, or nothing requested) */
+    CH582_CONN_LINKING,    /* attempting to (re)connect: 5B 33/34 */
+    CH582_CONN_PAIRING,    /* advertising for a new device: 5B 31 */
+    CH582_CONN_CONNECTED,  /* linked: 5B 32 */
+    CH582_CONN_REJECTED,   /* host refused the connection: 5B 36 */
+} ch582_conn_state_t;
+
 /* Init/task are provided through QMK's Bluetooth driver API (bluetooth_init /
  * bluetooth_task in ch582f_ajazz.c); ch582_task() is the internal RX/poll pump
  * called from bluetooth_task(). */
@@ -32,6 +41,11 @@ bool ch582_is_24g(void);
 /* True when the mode slider is in the USB position (wireless not in use). */
 bool ch582_is_usb(void);
 uint8_t ch582_get_slot(void);
+/* Detailed connection state (5B-driven), for the LCD status indicator. */
+ch582_conn_state_t ch582_get_conn_state(void);
+/* Slot number we are on / aiming for (1-3 BT, 1 for 2.4G, 0 = none), valid even
+ * while linking/pairing (unlike ch582_get_slot, which is 0 until connected). */
+uint8_t ch582_get_target_slot(void);
 
 /* Battery level reported by the module (0-100, 0xFF = unknown). From 5C frames. */
 uint8_t ch582_get_battery(void);
