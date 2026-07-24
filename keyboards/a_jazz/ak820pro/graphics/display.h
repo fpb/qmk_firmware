@@ -1,6 +1,7 @@
 // Copyright 2026 Fernando Birra
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <stdint.h>
 #include <stdbool.h>
 #include "rtc/rtc.h"
 
@@ -17,3 +18,7 @@ void display_draw_windows_logo(void);
 void display_draw_usb_logo(void);
 void display_draw_bluetooth_logo(void);
 void display_draw_2_4_g_logo(void);
+
+// General blink phase for the LCD: true during the first half of each period_ms
+// cycle (period_ms==0 => always on). Gate any drawn element on it to make it blink.
+bool display_blink(uint16_t period_ms);

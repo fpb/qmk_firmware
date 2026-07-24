@@ -190,11 +190,19 @@ __attribute__((weak)) bool display_housekeeping_task_user(void) {
     return true;
 }
 
-extern bool    ch582_is_connected(void);
-extern bool    ch582_is_24g(void);
-extern bool    ch582_is_usb(void);
-extern uint8_t ch582_get_slot(void);
+#include "bluetooth/ch582f_ajazz.h"   // connection state enum + getters
 extern uint8_t ch582_get_battery(void);
+
+// General blink phase: true during the first half of each period_ms cycle, so any
+// element can gate its visibility on it. period_ms == 0 means always on (solid).
+bool display_blink(uint16_t period_ms) {
+    if (!period_ms) return true;
+    return (timer_read32() % period_ms) < (period_ms / 2u);
+}
+
+// Connection-digit blink rates.
+#define CONN_BLINK_PAIRING_MS 200   // pairing: fast
+#define CONN_BLINK_LINKING_MS 700   // linking/reconnecting: slow
 
 // The top connection icon lives at (CONN_ICON_X, 0), 24x24. The channel digit is
 // drawn just to its right.
@@ -203,27 +211,33 @@ extern uint8_t ch582_get_battery(void);
 #define CONN_NUM_X    (CONN_ICON_X + CONN_ICON_W + 1)
 #define CONN_NUM_W    12
 
-// Channel digit next to the connection icon: connected BT slot (1-3) in BT mode,
-// '1' in 2.4G mode, nothing for USB or while not connected.
+// Channel digit next to the connection icon, blinking to show link state:
+//   connected -> solid digit;  linking/reconnecting -> slow blink;
+//   pairing -> fast blink;  rejected / idle / USB -> no digit.
+// Driven every housekeeping tick (~10 Hz) so the blink animates; the redraw is
+// self-guarded so it only touches the panel on a visible transition.
 static void draw_conn_number(bool force) {
-    char c = 0; // 0 -> nothing shown next to the icon
-    if (ch582_is_connected() && !ch582_is_usb()) {
-        if (ch582_is_24g()) {
-            c = '1';
-        } else {
-            uint8_t slot = ch582_get_slot();
-            if (slot >= 1 && slot <= 3) c = (char)('0' + slot);
-        }
+    uint8_t slot  = ch582_get_target_slot();               // 1-3, or 0
+    char    digit = (slot >= 1 && slot <= 3) ? (char)('0' + slot) : 0;
+
+    char     c      = 0;   // the digit this state wants to show (0 = none)
+    uint16_t period = 0;   // blink period; 0 = solid
+    switch (ch582_get_conn_state()) {
+        case CH582_CONN_CONNECTED: c = digit; period = 0;                     break;
+        case CH582_CONN_PAIRING:   c = digit; period = CONN_BLINK_PAIRING_MS; break;
+        case CH582_CONN_LINKING:   c = digit; period = CONN_BLINK_LINKING_MS; break;
+        case CH582_CONN_REJECTED:  /* fall through */
+        default:                   c = 0;                                     break;
     }
+    char shown = (c && display_blink(period)) ? c : 0;     // current blink-phase visibility
 
-    static char last_c = -1; // force the first paint
-    if (!force && c == last_c) return;
-    last_c = c;
+    static char last_shown = -1; // force the first paint
+    if (!force && shown == last_shown) return;
+    last_shown = shown;
 
-    // Clear the digit cell, then draw.
     lcd_clear_rect(CONN_NUM_X, 0, CONN_NUM_W + 1, CONN_ICON_W);
-    if (c) {
-        char s[2] = {c, 0};
+    if (shown) {
+        char s[2] = {shown, 0};
         lcd_draw_flash_text(FONT_STATUS, CONN_NUM_X, 2, s);
     }
 }
@@ -258,13 +272,16 @@ void display_housekeeping_task(void) {
     if (display_paused) return;   // animation owns the bus
 
     if (splash_cleared) {
-        // Repaint the clock once per RTC second.
+        // Connection digit every tick (~10 Hz) so its blink animates; self-guarded.
+        draw_conn_number(false);
+
+        // Clock + battery only need refreshing once per RTC second.
         static uint32_t last_shown_sec = UINT32_MAX;
         uint32_t sec = rtc_get_seconds();
         if (sec != last_shown_sec) {
             last_shown_sec = sec;
             draw_clock();
-            draw_status(false); // self-guards, only draws on change
+            draw_battery(false); // self-guards, only draws on change
         }
     }
 }
