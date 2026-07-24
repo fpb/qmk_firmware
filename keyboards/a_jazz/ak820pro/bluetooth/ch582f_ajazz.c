@@ -44,6 +44,8 @@ static volatile uint8_t connected_slot = 0;
 
 /* True while the module is advertising / waiting to bond (5B 31). */
 static volatile bool    is_pairing = false;
+/* Detailed connection state for the LCD indicator (superset of the two bools). */
+static volatile ch582_conn_state_t conn_state = CH582_CONN_IDLE;
 /* Battery percentage (0-100) from 5C frames; 0xFF until the module first reports. */
 static volatile uint8_t battery_level = 0xFF;
 /* Host keyboard LED bitmap from 5A frames (USB LED bits; bit1 = caps lock). */
@@ -265,6 +267,7 @@ void ch582_set_profile(ch582_profile_t profile) {
     connect_requested   = true;
     usb_mode            = false;
     is_module_connected = false;
+    conn_state          = CH582_CONN_LINKING;   /* attempting until 5B says otherwise */
     last_attempt_time   = timer_read();
     ch582_send_command(0xA6, &param, 1);
 }
@@ -281,6 +284,7 @@ void ch582_enter_pairing(void) {
     uint8_t param       = CH582_PAIR_PARAM;
     is_module_connected = false;
     is_pairing          = true;
+    conn_state          = CH582_CONN_PAIRING;
     /* Sent ONCE, matching the @isuua/edthu reference. Stock repeated it, but the
      * ACK/retry queue now guarantees delivery, so one is enough. */
     ch582_send_command(0xA6, &param, 1);
@@ -297,6 +301,7 @@ void ch582_pair(ch582_profile_t profile) {
 void ch582_cancel_connect(void) {
     connect_requested = false;
     usb_mode          = true;
+    conn_state        = CH582_CONN_IDLE;
 }
 
 bool ch582_is_connected(void) {
@@ -333,6 +338,18 @@ static uint8_t profile_to_slot(uint8_t profile) {
         return profile - 0x30;
     }
     return 0;
+}
+
+ch582_conn_state_t ch582_get_conn_state(void) {
+    return conn_state;
+}
+
+/* Slot to display: the slot we are aiming for, valid while linking/pairing (not
+ * just when connected). 2.4G shows as slot 1; USB/none is 0. */
+uint8_t ch582_get_target_slot(void) {
+    if (usb_mode) return 0;
+    if (requested_profile == CH582_PROFILE_PEER_24G) return 1;
+    return profile_to_slot(requested_profile);
 }
 
 void ch582_task(void) {
@@ -429,11 +446,13 @@ void ch582_task(void) {
                         case 0x32: /* link established - the only "connected" signal */
                             is_module_connected = true;
                             is_pairing          = false;
+                            conn_state          = CH582_CONN_CONNECTED;
                             connected_slot      = profile_to_slot(requested_profile);
                             break;
                         case 0x31: /* advertising / pairing, waiting for a device */
                             is_pairing          = true;
                             is_module_connected = false;
+                            conn_state          = CH582_CONN_PAIRING;
                             connected_slot      = 0;
                             host_leds           = 0; /* no link -> drop stale LED state */
                             break;
@@ -441,8 +460,16 @@ void ch582_task(void) {
                         case 0x34:
                             is_module_connected = false;
                             is_pairing          = false;
+                            conn_state          = CH582_CONN_LINKING;
                             connected_slot      = 0;
                             host_leds           = 0; /* no link -> drop stale LED state */
+                            break;
+                        case 0x36: /* host REFUSED the connection (edthu MD_REV REJECT) */
+                            is_module_connected = false;
+                            is_pairing          = false;
+                            conn_state          = CH582_CONN_REJECTED;
+                            connected_slot      = 0;
+                            host_leds           = 0;
                             break;
                         default:   /* 0x23 idle/finalize: periodic, appears both
                                     * connected and disconnected -> leave state */
