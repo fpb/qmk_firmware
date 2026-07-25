@@ -13,7 +13,7 @@
 #define HAL_USE_PWM TRUE
 
 // External PCF8563 RTC on P0.14/P0.15 via the ChibiOS software (bit-banged) I2C
-// fallback LLD (USE_HAL_I2C_FALLBACK=yes in rules.mk). Requires the fix.diff patch
+// fallback LLD (USE_HAL_I2C_FALLBACK=yes in rules.mk). Requires the i2c_fallback.diff patch
 // to the fallback driver (see rtc.c / readme). The SN32 HW I2C peripheral cannot
 // reach those pins.
 #define HAL_USE_I2C TRUE
