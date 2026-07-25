@@ -19,13 +19,15 @@ The following is supported by this port:
 - [x] indicator LEDs (CAPS Lock, Windows Lock and Charging)
 - [x] LCD Display, showing:
     - Layout (Mac/Win)
-    - Connection type (USB/BT/2.4G)
+    - Connection type (USB/BT/2.4G) + Slot (for BT mode)
     - date (day/month)
-    - time (HH:MM:SS)
+    - time (HH:MM or HH:MM:SS)
     - battery charge level (%)
-- [x] Triple mode support (Use `Fn`+[`Q`|`W`|`E`] for Bluetooth and `Fn`+`R` for 2.4G dongle. Press `Fn`+`P` (1 second) to enter pairing mode)
+- [x] Triple mode support (Use `Fn`+[`Q`|`W`|`E`] for Bluetooth and `Fn`+`R` for 2.4G dongle. Keep pressed for pairing.
 - [x] Per-key RGB Matrix (hardware PWM across CT16B0/B1/B2 — see `hardware_pwm.diff`)
-- [x] Play animations from flash memory (functional, but still a work in progress)
+- [x] Play animations from flash memory
+- [x] Via support
+- [x] Support utility to flash assets to Flash memory and to set the clock
 
 Keyboard Maintainer: [fpb](https://github.com/fpb)
 
@@ -45,14 +47,14 @@ This branch needs **three** working-tree patches applied to `lib/chibios-contrib
 
     $ cd lib/chibios-contrib
     $ git apply ../../keyboards/a_jazz/ak820pro/hardware_pwm.diff
-    $ git apply ../../keyboards/a_jazz/ak820pro/fix.diff
+    $ git apply ../../keyboards/a_jazz/ak820pro/i2c_fallback.diff
     $ git apply ../../keyboards/a_jazz/ak820pro/rtc_lld.diff
 
 **`hardware_pwm.diff`** — multi-timer hardware PWM for the RGB matrix. The 15 columns exceed CT16B1's 12 PWM channels, so they are spread over CT16B0/B1/B2. This generalises the SN32 CT PWM LLD (adds PWMD0/PWMD2, the SN32F290 PWMCTRL-only/key-protected register model, MR9 period register) and moves the ChibiOS OS-tick counter off CT16B0 to the otherwise-unused CT16B5 (so CT16B0 is free for PWM — column C14 can only route there).
 
-**`fix.diff`** — RTC over the ChibiOS software (bit-banged) I2C fallback LLD. The LCD clock is driven by an external PCF8563/D8563 RTC on P0.14/P0.15 — pins the SN32 hardware I2C peripheral cannot reach, so this port uses the fallback LLD (`USE_HAL_I2C_FALLBACK = yes`). The stock fallback driver does **not** work on this board (in `OPENDRAIN=FALSE` mode it releases SCL to input each clock, which the SN32 reads back low, so every transfer times out). This patch keeps SCL push-pull throughout, idles the pins in `i2c_lld_start`, and cleans up the SDA read/release ordering.
+**`i2c_fallback.diff`** — RTC over the ChibiOS software (bit-banged) I2C fallback LLD. The LCD clock is driven by an external PCF8563/D8563 RTC on P0.14/P0.15 — pins the SN32 hardware I2C peripheral cannot reach, so this port uses the fallback LLD (`USE_HAL_I2C_FALLBACK = yes`). The stock fallback driver does **not** work on this board (in `OPENDRAIN=FALSE` mode it releases SCL to input each clock, which the SN32 reads back low, so every transfer times out). This patch keeps SCL push-pull throughout, idles the pins in `i2c_lld_start`, and cleans up the SDA read/release ordering.
 
-**`rtc_lld.diff`** — the SN32 RTC LLD itself (`hal_rtc_lld.c/.h`), plus the `platform.mk` line that pulls `RTC/driver.mk` into the build. Distinct from `fix.diff`, which fixes the *I2C* path to the external PCF8563; this one is the ChibiOS RTC driver for the SN32's own on-chip RTC.
+**`rtc_lld.diff`** — the SN32 RTC LLD itself (`hal_rtc_lld.c/.h`), plus the `platform.mk` line that pulls `RTC/driver.mk` into the build. Distinct from `i2c_fallback.diff`, which fixes the *I2C* path to the external PCF8563; this one is the ChibiOS RTC driver for the SN32's own on-chip RTC.
 
 Note: all three are working-tree edits of the `lib/chibios-contrib` submodule and are discarded by `git submodule update`; re-apply if that happens. The submodule working tree is shared across branches, so after switching branches you may already have another branch's patches applied — `git -C lib/chibios-contrib status` shows what is live. A fourth patch, `spi0_dma_tunnel.diff`, exists on the `ak820pro-flashlcd-qp-lld` branch only; this branch owns SPI0's Vector58 bare-metal and does not need it.
 
