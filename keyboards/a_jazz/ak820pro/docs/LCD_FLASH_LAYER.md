@@ -82,8 +82,14 @@ Both exist as of Stage C. The flash blit takes an arbitrary rect (`DMACNT = w*h*
 ## The asset pipeline (branch `ak820pro-flashlcd-tiles`)
 `PNG -> raw RGB565 -> tile -> panel`, with **no decode step anywhere in the firmware**.
 
-- `res/mkraw.py` decodes the source PNGs (stdlib `zlib` only — no Pillow/ImageMagick here) into
-  flat `res/raw/*.raw` + `manifest.json` recording dimensions/format/stride/size.
+> **Where it lives now:** the authoring pipeline (source PNGs + `mkraw.py`/`mkanim.py`)
+> was moved to the **time-util-ak820pro** repo (`assets/`), so the firmware tree keeps
+> only the generated `res/flash_assets.h` (the `ASSET_*` ids it compiles against). See
+> that repo's README for the build-and-flash workflow; the design below still describes
+> what `mkraw.py` does.
+
+- `mkraw.py` decodes the source PNGs (stdlib `zlib` only — no Pillow/ImageMagick here) into
+  flat `raw/*.raw` + `manifest.json` recording dimensions/format/stride/size.
 - **Everything is RGB565**, hi-byte-first (panel order), alpha composited over black. This is
   deliberate: the DMA can only *stream raw pixels* — it cannot expand 1bpp or blend fg/bg — so
   the on-flash bytes must already be what the panel consumes. Keeping the firmware-embedded step

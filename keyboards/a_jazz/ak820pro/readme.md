@@ -71,5 +71,5 @@ After flashing QMK firmware you can simply press `ESC` while plugging the cable 
 Additionally you may want to use:
 
 - [SonixFlasherC](https://github.com/SonixQMK/SonixFlasherC) to flash the firmware. For a working verision on MacOS Tahoe you may use [this branch of my fork](https://github.com/fpb/SonixFlasherC/tree/fix_for_macos_tahoe).
-- [Utility to set the time](https://github.com/fpb/time-util-ak820pro) on the keyboard.
+- [**ak820ctl** (time-util-ak820pro)](https://github.com/fpb/time-util-ak820pro) — the host toolkit: set the LCD clock, and (this `tiles` branch only) build and flash the LCD image assets and GIF animations into external SPI flash. The asset-authoring pipeline (source PNGs + `mkraw.py`/`mkanim.py`) lives there too; the firmware tree keeps only the generated `graphics/res/flash_assets.h`.
 
