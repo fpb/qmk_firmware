@@ -68,7 +68,13 @@
 #define CHARGE_STDBY_PIN  B17
 
 
-#define CORTEX_ENABLE_WFI_IDLE TRUE   /* TEMP test: idle sleeps on WFI (was FALSE) */
+// Idle thread sleeps on WFI (lower idle current). Safe here only because
+// efl_ramtext.diff makes the SN32 EFL flash program/erase run from SRAM: with
+// the flash routines in flash, a VIA/eeconfig flash write stalls instruction/
+// vector fetch long enough that the SPI0 DMA completion IRQ is missed and the
+// WFI-idle wakeup is lost -> hang. RAM-resident flash ops keep IRQs serviced.
+// (If you drop efl_ramtext.diff, set this back to FALSE.)
+#define CORTEX_ENABLE_WFI_IDLE TRUE
 
 #define DEBUG_MATRIX_SCAN_RATE
 #define DISPLAY_CLOCK_SHOW_SECONDS  FALSE

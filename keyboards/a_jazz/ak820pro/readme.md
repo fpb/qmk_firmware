@@ -68,7 +68,7 @@ for anyone who wants the leanest build and does not care about the QP option. (T
 `tx_pixels`/`lcd_fill_rect` CPU byte-swap here is not on the hot path: the dashboard is
 100% flash-DMA, so those helpers are unused.)
 
-### ChibiOS submodule patches (all five required)
+### ChibiOS submodule patches (all six required)
 
 This branch needs **five** working-tree patches applied to `lib/chibios-contrib`
 before building. They touch disjoint files, so order does not matter:
@@ -79,6 +79,7 @@ before building. They touch disjoint files, so order does not matter:
     $ git apply ../../keyboards/a_jazz/ak820pro/rtc_lld.diff
     $ git apply ../../keyboards/a_jazz/ak820pro/spi_fifo_pump.diff
     $ git apply ../../keyboards/a_jazz/ak820pro/spi_flash_dma.diff
+    $ git apply ../../keyboards/a_jazz/ak820pro/efl_ramtext.diff
 
 **`hardware_pwm.diff`** — multi-timer hardware PWM for the RGB matrix. The 15 columns exceed CT16B1's 12 PWM channels, so they are spread over CT16B0/B1/B2. This generalises the SN32 CT PWM LLD (adds PWMD0/PWMD2, the SN32F290 PWMCTRL-only/key-protected register model, MR9 period register) and moves the ChibiOS OS-tick counter off CT16B0 to the otherwise-unused CT16B5 (so CT16B0 is free for PWM — column C14 can only route there).
 
@@ -89,6 +90,8 @@ before building. They touch disjoint files, so order does not matter:
 **`spi_fifo_pump.diff`** — FIFO-batched pump for the ChibiOS SN32 SPI driver (`hal_spi_v2_lld`). The stock pump sends one byte per interrupt and waits for its RX word before the next, so SCLK sits idle for the whole IRQ latency between bytes. This primes the TX FIFO on kick-off and drains-all-RX + refills-to-full per IRQ (`RXFIFOTH=0` for tail delivery). It brings the driver up to what this port's bare-metal `tx_pipe` already did — which is why the unified branch loses no throughput. Also on `-qp-lld` and `-full`.
 
 **`spi_flash_dma.diff`** — the SPI-to-SPI flash→LCD DMA as a driver extension (`spiSN32FlashDmaPrepare`/`Fire`/`Busy`). The DMA registers live on SPI0 itself, so the driver borrows SPI0 for the data phase (8-bit command config → 16-bit pixel words), arms it, and services completion in its own SPI0 handler — restoring 8-bit **and the FIFO-mode interrupt enable** so a following `spiSend` still completes (this branch drives the driver directly between DMAs, unlike `-qp-lld` which re-runs `spiStart` per QP flush). `graphics/lcd_bus.c` just calls the API. Gated by `SN32_SPI0_FLASH_DMA` (`mcuconf.h`). This is the same extension as `-qp-lld`'s, plus the IE-restore.
+
+**`efl_ramtext.diff`** — links the SN32F290 EFL flash program/erase (`efl_lld_program`, `efl_lld_start_erase_sector`, and the `sn32_flash_wait_busy` spin) into `.ramtext` so they execute from SRAM. VIA stores its dynamic keymaps in internal flash via EFL wear-leveling; with the flash routines running from flash, a program/erase stalls instruction/vector fetch long enough to delay the SPI0 DMA completion IRQ and lose the `CORTEX_ENABLE_WFI_IDLE` wakeup — the board hangs (no reboot after flash, then locks after a few keys). Running the flash ops from RAM keeps IRQs serviced, so `WFI_IDLE` can stay `TRUE` (lower idle current) with VIA enabled. Only matters on this branch (`HAL_USE_SPI TRUE` + VIA + WFI idle); harmless elsewhere.
 
 Note: all five are working-tree edits of the `lib/chibios-contrib` submodule and are discarded by `git submodule update`; re-apply if that happens. The submodule working tree is shared across branches, so after switching branches you may already have another branch's patches applied — `git -C lib/chibios-contrib status` shows what is live.
 
