@@ -1,9 +1,13 @@
 // Copyright 2026 Fernando Birra
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Bare-metal LCD bus: we own SPI0 (+ Vector58) and SPI1 (flash). The GC9107 panel
-// and the dashboard are driven entirely bare-metal (no Quantum Painter); the flash
-// animation runs on the interrupt-driven SPI-to-SPI DMA. See docs/LCD_FLASH_LAYER.md.
+// [UNIFIED EXPERIMENT — ak820pro-flashlcd-unified]
+// LCD bus over the ChibiOS SN32 SPI driver: SPI0 (the panel) uses spiSend (FIFO-
+// batched by spi_fifo_pump.diff) for all commands/pixels, and the flash->LCD DMA is
+// the driver's spiSN32FlashDma* extension. SPI1 (flash reads) stays bare-metal. This
+// is the experiment sibling of ak820pro-flashlcd-tiles (which does the same drawing
+// fully bare-metal) -- built to measure whether one driver can replace the bare-metal
+// bus without losing throughput. See docs/LCD_FLASH_LAYER.md.
 
 #include <string.h>
 
@@ -57,29 +61,20 @@ extern void display_set_paused(bool paused);   // graphics/display.c
 // the stock frame rate was not identified; 100 ms is fitted to observation, not
 // derived.
 
-#define NVIC_ISER ((volatile uint32_t *)0xE000E100)
-#define NVIC_ICER ((volatile uint32_t *)0xE000E180)
-#define NVIC_ICPR ((volatile uint32_t *)0xE000E280)
-#define SPI0_IRQ  6
-
 // ---------------------------------------------------------------------------
 // Low-level bus
 // ---------------------------------------------------------------------------
-static void spi0_setup(void) {
-    SN_SYS1->AHBCLKEN |= (1u << 12);
-    SN_SPI0->CTRL0_b.SPIEN  = 0;
-    SN_SPI0->CTRL0_b.MS     = 0;
-    SN_SPI0->CTRL0_b.SDODIS = 0;
-    SN_SPI0->CTRL0_b.DL     = 7;       // 8-bit
-    SN_SPI0->CTRL0_b.SELDIS = 1;
-    SN_SPI0->CTRL1_b.MLSB   = 0;
-    SN_SPI0->CTRL1_b.CPOL   = 0;
-    SN_SPI0->CTRL1_b.CPHA   = 0;
-    SN_SPI0->CLKDIV_b.DIV   = 0;       // 24MHz (CPU writes corrupt at <=12MHz)
-    SN_SPI0->DFDLY_b.DFETCH_EN = 1;
-    SN_SPI0->CTRL0_b.FRESET = 0b11;
-    SN_SPI0->CTRL0_b.SPIEN  = 1;
-}
+// [UNIFIED EXPERIMENT] SPI0 (the LCD) is driven by the ChibiOS SN32 SPI driver
+// (spiSend, FIFO-batched by spi_fifo_pump.diff) instead of bare-metal pokes, and
+// the flash->LCD DMA is its extension (spiSN32FlashDma*). We keep manual CS/DC as
+// GPIO; every SPI0 byte goes through the driver, because leaving the driver's RX
+// FIFO IRQ enabled while poking SN_SPI0->DATA directly would fire its handler
+// spuriously. 8-bit, mode 0, 24 MHz -- matches the panel and the DMA extension.
+static const SPIConfig spicfg = {
+    .ctrl0  = SPI_DATA_LENGTH(8),
+    .ctrl1  = SPI_MLSB_MSB | SPI_CPOL_LOW | SPI_CPHA_FALLING,   // mode 0, MSB first
+    .clkdiv = 0,                                                // 24 MHz
+};
 
 static bool spi1_inited = false;
 static void spi1_setup(void) {
@@ -102,43 +97,24 @@ static void spi1_setup(void) {
 static inline void cs(bool hi) { gpio_write_pin(PANEL_CS, hi); }
 static inline void dc(bool data){ gpio_write_pin(PANEL_DC, data); }
 
-static void tx8(uint8_t b) {
-    SN_SPI0->DATA = b;
-    uint32_t n = 0; while (SN_SPI0->STAT_b.RX_EMPTY) { if (++n > 100000u) break; }
-    (void)SN_SPI0->DATA;
-}
+static void tx8(uint8_t b) { spiSend(&SPID0, 1, &b); }
 
-// --- pipelined bulk writer -------------------------------------------------
-// tx8() pays a full RX round-trip per byte (write, wait for the echo, discard), so a
-// screenful costs far more than the wire time. For pixel payloads we instead keep the
-// TX FIFO full and drain RX opportunistically -- bytes then stream back-to-back at the
-// SPI clock. Caller must have set the window already (CS low, DC=data).
-static inline void rx_drain(void) { while (!SN_SPI0->STAT_b.RX_EMPTY) (void)SN_SPI0->DATA; }
-
-static inline void tx_pipe(uint8_t b) {
-    uint32_t g = 0;
-    while (SN_SPI0->STAT_b.TX_FULL) {          // only stall when the FIFO is actually full
-        rx_drain();
-        if (++g > 1000000u) break;
-    }
-    SN_SPI0->DATA = b;
-    if (!SN_SPI0->STAT_b.RX_EMPTY) (void)SN_SPI0->DATA;   // keep RX from backing up
-}
-
-// Wait for the last queued byte to leave the shifter, then discard its echo.
-static void tx_flush(void) {
-    uint32_t g = 0;
-    while ((!SN_SPI0->STAT_b.TX_EMPTY || SN_SPI0->STAT_b.BUSY) && ++g < 1000000u) rx_drain();
-    rx_drain();
-}
-
-// RGB565 is streamed hi-byte-first to match the panel.
+// RGB565 is streamed hi-byte-first to match the panel. The driver takes a byte
+// buffer, but px[] is a little-endian uint16 array (lo byte first in memory), so
+// we byte-swap into a scratch buffer in chunks and hand each chunk to spiSend.
+// (This swap-copy is pure overhead versus the old inline tx_pipe -- it is one of
+// the costs the unified experiment is meant to expose.)
 static void tx_pixels(const uint16_t *px, uint32_t n) {
-    for (uint32_t i = 0; i < n; i++) {
-        tx_pipe((uint8_t)(px[i] >> 8));
-        tx_pipe((uint8_t)(px[i] & 0xFF));
+    static uint8_t buf[512];
+    while (n) {
+        uint32_t c = n < 256u ? n : 256u;
+        for (uint32_t i = 0; i < c; i++) {
+            buf[2*i]   = (uint8_t)(px[i] >> 8);
+            buf[2*i+1] = (uint8_t)(px[i] & 0xFF);
+        }
+        spiSend(&SPID0, c * 2u, buf);
+        px += c; n -= c;
     }
-    tx_flush();
 }
 
 static void reset_panel(void) {
@@ -175,9 +151,13 @@ void lcd_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t 
     if (x1 < x0 || y1 < y0) return;
     lcd_window(x0, y0, x1, y1);
     uint32_t px = (uint32_t)(x1 - x0 + 1) * (uint32_t)(y1 - y0 + 1);
-    uint8_t hi = color >> 8, lo = color & 0xFF;
-    for (uint32_t i = 0; i < px; i++) { tx_pipe(hi); tx_pipe(lo); }
-    tx_flush();
+    static uint8_t buf[512];
+    for (uint32_t i = 0; i < 256u; i++) { buf[2*i] = color >> 8; buf[2*i+1] = color & 0xFF; }
+    while (px) {
+        uint32_t c = px < 256u ? px : 256u;
+        spiSend(&SPID0, c * 2u, buf);
+        px -= c;
+    }
     cs(1);
 }
 
@@ -231,7 +211,7 @@ static void send_seq(const uint8_t *seq, uint32_t len) {   // cmd, delay_ms, npa
 void lcd_init(void) {
     gpio_set_pin_output(PANEL_CS); gpio_write_pin(PANEL_CS, 1);
     gpio_set_pin_output(PANEL_DC); gpio_write_pin(PANEL_DC, 1);
-    spi0_setup();
+    spiStart(&SPID0, &spicfg);          // driver owns SPI0 (8-bit, mode 0, 24 MHz)
     reset_panel();
     static const uint8_t seq[] = {
         0xFE, 5, 0,                 // inter-register enable 1
@@ -488,17 +468,12 @@ uint16_t lcd_flash_text_width(uint16_t font_id, const char *s) {
 
 static volatile bool blit_done = true;
 
-void Vector58(void) {
-    uint32_t ris = SN_SPI0->RIS;
-    SN_SPI0->IC = 0x3F;
-    if (ris & (1u << 5)) {                  // DMATCIF
-        for (uint32_t g = 0; g < 200000u && (!SN_SPI0->STAT_b.TX_EMPTY || SN_SPI0->STAT_b.BUSY); g++) { }
-        SN_SPI0->DMACTRL_b.DMAEN = 0;
-        SN_SPI0->CTRL0_b.DL = 7;
-        gpio_write_pin(FLASH_CS, 1);
-        cs(1);
-        blit_done = true;
-    }
+// DMA completion is serviced by the driver's SPI0 handler (the spiSN32FlashDma
+// extension); it calls blit_done_cb below. No Vector58 here anymore.
+static void blit_done_cb(void) {
+    gpio_write_pin(FLASH_CS, 1);
+    cs(1);
+    blit_done = true;
 }
 
 // Stage C: blit a w*h RGB565 tile from flash offset `src` to the panel rect at (x,y).
@@ -516,21 +491,16 @@ void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h
     lcd_flash_init();
     uint32_t bytes = (uint32_t)w * (uint32_t)h * 2u;
     blit_done = false;
-    // Fully re-init SPI0 so the DMA sees a pristine peripheral (SPIEN=0 + FRESET re-latches
-    // DFETCH_EN, which a live FRESET can't) after any CPU-write drawing.
-    spi0_setup();
-    SN_SPI0->CTRL0_b.FRESET = 0b11; SN_SPI1->CTRL0_b.FRESET = 0b11;
-    SN_SPI0->DMACTRL_b.DMAEN = 0; SN_SPI0->DMACTRL_b.DIR = 0;
-    SN_SPI0->DMACNT_b.CNT = bytes - 1; SN_SPI0->DMAHTCNT_b.HTCNT = (bytes - 1) / 2;
-    lcd_window(x, y, x + w - 1, y + h - 1);
+    // SPI0 side: driver borrows it for the DMA, loads the counts. Leaves 8-bit so
+    // the command phase (window) can go out before the pixel stream.
+    spiSN32FlashDmaPrepare(&SPID0, bytes);
+    SN_SPI1->CTRL0_b.FRESET = 0b11;                 // flash side (bare-metal, ours)
+    lcd_window(x, y, x + w - 1, y + h - 1);         // via spiSend (SPI0 still 8-bit)
     gpio_write_pin(FLASH_CS, 0);
     spi1_xfer(FLASH_CMD_READ); spi1_xfer((src>>16)&0xFF); spi1_xfer((src>>8)&0xFF); spi1_xfer(src&0xFF);
-    SN_SPI0->IC = 0x3F; SN_SPI1->IC = 0x3F;
-    SN_SPI0->CTRL0_b.DL = 0xF;               // 16-bit TX (one RGB565 pixel per word)
-    SN_SPI0->IE = (1u << 5) | (1u << 4);
-    NVIC_ICPR[0] = (1u << SPI0_IRQ);
-    NVIC_ISER[0] = (1u << SPI0_IRQ);        // we own Vector58 -> real interrupt-driven completion
-    SN_SPI0->DMACTRL_b.DMAEN = 1;   // interrupt-driven; Vector58 signals completion (non-blocking)
+    SN_SPI1->IC = 0x3F;
+    // Flip to 16-bit pixels and arm; blit_done_cb fires at completion.
+    spiSN32FlashDmaFire(&SPID0, blit_done_cb);
 }
 
 // Animation frames are full-screen tiles.
@@ -582,10 +552,9 @@ void lcd_blit_flash_probe(uint32_t src, uint16_t w, uint16_t h) {
     lcd_flash_init();
     lcd_blit_flash(src, 0, 0, w, h);
     for (uint32_t i = 0; i < 4000000u && !blit_done; i++) { __asm__ volatile("nop"); }
+    // The DMA extension already restored SPI0 to the driver's 8-bit FIFO mode at
+    // completion; nothing to tear down here.
     gpio_write_pin(FLASH_CS, 1); cs(1);
-    NVIC_ICER[0] = (1u << SPI0_IRQ);
-    SN_SPI0->IE  = 0;
-    spi0_setup();
 }
 
 void anim_toggle(void) {
@@ -604,12 +573,8 @@ void anim_toggle(void) {
         anim_on = false;
         while (!blit_done) { /* let the in-flight frame finish */ }
         gpio_write_pin(FLASH_CS, 1); cs(1);
-        // Return SPI0 to its exact boot state so the dashboard runs no heavier than at
-        // start: kill the DMA-completion IRQ and re-init the SPI (clears leftover DMA
-        // config / interrupt-enable that otherwise adds per-pass overhead).
-        NVIC_ICER[0] = (1u << SPI0_IRQ);
-        SN_SPI0->IE  = 0;
-        spi0_setup();
+        // The DMA extension restored SPI0 to the driver's 8-bit FIFO mode at the
+        // last frame's completion, so the dashboard's spiSend path is ready again.
         set_madctl(MADCTL_270);             // restore dashboard orientation
         display_set_paused(false);          // resume + full repaint
     }

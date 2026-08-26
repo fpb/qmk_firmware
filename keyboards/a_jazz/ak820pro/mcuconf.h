@@ -6,7 +6,8 @@
 #include_next <mcuconf.h>
 
 #undef SN32_SPI_USE_SPI0
-#define SN32_SPI_USE_SPI0 FALSE
+#define SN32_SPI_USE_SPI0 TRUE
+#define SN32_SPI0_FLASH_DMA   /* flash->LCD DMA driver extension (hal_spi_v2_lld) */
 
 #undef SN32_SERIAL_USE_UART2
 #define SN32_SERIAL_USE_UART2 TRUE

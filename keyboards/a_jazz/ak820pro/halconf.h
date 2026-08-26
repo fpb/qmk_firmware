@@ -4,7 +4,7 @@
 #pragma once
 
 #define HAL_USE_PAL TRUE
-#define HAL_USE_SPI FALSE
+#define HAL_USE_SPI TRUE   /* unified experiment: dashboard CPU pushes via the driver */
 #define HAL_USE_SERIAL TRUE
 #define HAL_USE_RTC TRUE
 
