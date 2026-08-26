@@ -41,33 +41,32 @@ Make example for this keyboard (after setting up your build environment):
 
 See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_tools) and the [make instructions](https://docs.qmk.fm/#/getting_started_make_guide) for more information. Brand new to QMK? Start with our [Complete Newbs Guide](https://docs.qmk.fm/#/newbs).
 
-### What this branch is (unified-driver experiment)
+### What this branch is (the preferred flash-LCD build)
 
-`ak820pro-flashlcd-unified` is an experiment sibling of `ak820pro-flashlcd-tiles`.
-It draws the **identical** flash-tile dashboard, but instead of owning SPI0
-bare-metal it drives the panel entirely through the **ChibiOS SN32 SPI driver**:
-all panel commands/pixels go through `spiSend` (FIFO-batched by `spi_fifo_pump.diff`)
-and the flash→LCD DMA is the driver's `spiSN32FlashDma*` extension
-(`spi_flash_dma.diff`). SPI1 (flash reads) stays bare-metal. `Vector58`,
-`spi0_setup`, and the pipelined `tx_pipe` are gone from `graphics/lcd_bus.c`.
+`ak820pro-flashlcd-unified` is the **preferred** flash-resident-LCD branch. It draws
+the flash-tile dashboard (LCD art + GIF animations provisioned to external SPI flash
+by `ak820ctl`, no art baked into firmware) driven **entirely through the ChibiOS SN32
+SPI driver**: all panel commands/pixels go through `spiSend` (FIFO-batched by
+`spi_fifo_pump.diff`) and the flash→LCD DMA is the driver's `spiSN32FlashDma*`
+extension (`spi_flash_dma.diff`). SPI1 (flash reads) stays bare-metal.
 
-**Question it answers:** can one SPI driver replace the bare-metal bus without
-losing throughput? **Measured on hardware (vs `tiles`):**
+**Why this over the bare-metal `tiles` branch:** using the standard SPI driver (rather
+than owning SPI0 with a hand-rolled `Vector58` bus) keeps the panel path maintainable
+and leaves **Quantum Painter available** if it is ever wanted again — at a cost of just
++468 bytes and no measurable speed loss. Measured on hardware vs `tiles`:
 
 | | tiles (bare-metal) | unified (driver) |
 | --- | --- | --- |
 | flash | 76080 B | 76548 B (**+468**) |
 | idle matrix scan | ~1392 Hz | 1393 Hz |
 | full-redraw dip | — | 1361 Hz (~−2%) |
-| dashboard / animation | ✅ | ✅ (both render) |
+| dashboard / animation | ✅ | ✅ |
 
-**Verdict: a wash.** No measurable speed cost, +468 bytes, one SPI driver instead
-of a bare-metal `Vector58` fork. The CPU byte-swap in `tx_pixels`/`lcd_fill_rect`
-(a `uint16` RGB565 tile is little-endian; the panel wants hi-byte-first) is *not*
-on the hot path — the dashboard is 100% flash-DMA, so those helpers are unused.
-`tiles` remains the shipping branch (minimal, no `HAL_USE_SPI` dependency); this
-branch is kept as a working reference that the stage-1 pump + stage-2a DMA
-extension can drive the whole panel.
+`ak820pro-flashlcd-tiles` remains as the **minimal bare-metal alternative** — the same
+dashboard without `HAL_USE_SPI`, ~0.5 KB smaller and with no ChibiOS SPI dependency —
+for anyone who wants the leanest build and does not care about the QP option. (The
+`tx_pixels`/`lcd_fill_rect` CPU byte-swap here is not on the hot path: the dashboard is
+100% flash-DMA, so those helpers are unused.)
 
 ### ChibiOS submodule patches (all five required)
 
@@ -106,5 +105,5 @@ After flashing QMK firmware you can simply press `ESC` while plugging the cable 
 Additionally you may want to use:
 
 - [SonixFlasherC](https://github.com/SonixQMK/SonixFlasherC) to flash the firmware. For a working verision on MacOS Tahoe you may use [this branch of my fork](https://github.com/fpb/SonixFlasherC/tree/fix_for_macos_tahoe).
-- [**ak820ctl** (time-util-ak820pro)](https://github.com/fpb/time-util-ak820pro) — the host toolkit: set the LCD clock, and (this `tiles` branch only) build and flash the LCD image assets and GIF animations into external SPI flash. The asset-authoring pipeline (source PNGs + `mkraw.py`/`mkanim.py`) lives there too; the firmware tree keeps only the generated `graphics/res/flash_assets.h`.
+- [**ak820ctl** (time-util-ak820pro)](https://github.com/fpb/time-util-ak820pro) — the host toolkit: set the LCD clock, and (on the flash-resident branches, this one included) build and flash the LCD image assets and GIF animations into external SPI flash. The asset-authoring pipeline (source PNGs + `mkraw.py`/`mkanim.py`) lives there too; the firmware tree keeps only the generated `graphics/res/flash_assets.h`.
 
