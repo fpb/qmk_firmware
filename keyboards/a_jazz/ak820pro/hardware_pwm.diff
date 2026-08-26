@@ -1,5 +1,5 @@
 diff --git a/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.c b/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.c
-index c7771f95d6..2cbcdb2a77 100644
+index c7771f95d6..90c6d4895a 100644
 --- a/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.c
 +++ b/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.c
 @@ -38,9 +38,15 @@
@@ -400,7 +400,7 @@ index c7771f95d6..2cbcdb2a77 100644
  
  #endif /* HAL_USE_PWM */
 diff --git a/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.h b/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.h
-index 195a6346c5..abcd9806ce 100644
+index 195a6346c5..2126797a21 100644
 --- a/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.h
 +++ b/os/hal/ports/SN32/LLD/SN32F2xx/CT/hal_pwm_lld.h
 @@ -63,6 +63,23 @@
@@ -564,15 +564,14 @@ index 195a6346c5..abcd9806ce 100644
  #else
  #define SN32_CT_PWM_GET_ADDR_CT16B1(timer, cmd) (NULL)
  #endif
--
--#define SN32_CT_PWM_GET_ADDR(timer, cmd) \
--  (SN32_CT_PWM_GET_ADDR_CT16B1(timer, cmd))
 +#if SN32_PWM_USE_CT16B2
 +#define SN32_CT_PWM_GET_ADDR_CT16B2(timer, cmd) ((timer) == &PWMD2 ? &(SN32_CT16B2)->cmd : NULL)
 +#else
 +#define SN32_CT_PWM_GET_ADDR_CT16B2(timer, cmd) (NULL)
 +#endif
-+
+ 
+-#define SN32_CT_PWM_GET_ADDR(timer, cmd) \
+-  (SN32_CT_PWM_GET_ADDR_CT16B1(timer, cmd))
 +/* First non-NULL (i.e. the matching timer) wins. */
 +#define SN32_CT_PWM_GET_ADDR(timer, cmd)                                          \
 +  (SN32_CT_PWM_GET_ADDR_CT16B0(timer, cmd) != NULL ? SN32_CT_PWM_GET_ADDR_CT16B0(timer, cmd) : \
