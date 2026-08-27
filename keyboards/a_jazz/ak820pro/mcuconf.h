@@ -9,6 +9,14 @@
 #define SN32_SPI_USE_SPI0 TRUE
 #define SN32_SPI0_FLASH_DMA   /* flash->LCD DMA driver extension (hal_spi_v2_lld) */
 
+/* dualspi WIP: bring SPI1 (external flash) under the ChibiOS SPI driver too.
+ * Enabling the instance compiles SN32_SPI1_HANDLER (dormant until spiStart), and
+ * lets the flash->LCD DMA extension borrow/restore SPID1's RX-FIFO IRQ. The
+ * bare-metal SPI1 flash I/O is being migrated to spiExchange(&SPID1) -- see
+ * graphics/lcd_bus.c. */
+#undef SN32_SPI_USE_SPI1
+#define SN32_SPI_USE_SPI1 TRUE
+
 #undef SN32_SERIAL_USE_UART2
 #define SN32_SERIAL_USE_UART2 TRUE
 

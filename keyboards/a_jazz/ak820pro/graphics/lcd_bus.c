@@ -78,7 +78,14 @@ static const SPIConfig spicfg = {
 
 static bool spi1_inited = false;
 static void spi1_setup(void) {
-    SN_SYS1->AHBCLKEN |= (1u << 13);
+    // [dualspi Step 2] SPI1 (external flash) is now a ChibiOS driver instance
+    // (SPID1). spiStart configures CTRL0/CTRL1/CLKDIV (8-bit, mode 0, 24 MHz --
+    // reuse the panel's spicfg), enables the SPI1 clock (AHB bit 13) + NVIC
+    // vector, and sets RXFIFOTHIE/SPIEN. We still apply the SN32 specifics the
+    // generic driver config does not: the EBI/LCD DMA-datapath clocks, the SPI1
+    // PFPA pin-mux, and the DMA auto-fetch (DFETCH_EN). Job-1 flash I/O now goes
+    // through spiSend/spiExchange(&SPID1); only the DMA blit command phase still
+    // pokes SN_SPI1 directly (with the vector disabled -- see lcd_blit_flash).
     SN_SYS1->AHBCLKEN |= (1u << 15) | (1u << 26);   // EBI+LCD (shared DMA datapath)
     // NOTE: do NOT touch SN_FLASH->LPCTRL here. ChibiOS sets it to 0x5AFA0029 (correct
     // wait-states for 48MHz). Overriding it to the ">48MHz" preset (0x39) added extra
@@ -87,11 +94,9 @@ static void spi1_setup(void) {
     SN_PFPA->SPI_b.MISO1 = 0b01; SN_PFPA->SPI_b.MOSI1 = 0b01;
     SN_PFPA->SPI_b.SCK1 = 0b11;  SN_PFPA->SPI_b.SEL1  = 0b01;
     gpio_set_pin_output(FLASH_CS); gpio_write_pin(FLASH_CS, 1);
-    SN_SPI1->CTRL0_b.SPIEN=0; SN_SPI1->CTRL0_b.MS=0; SN_SPI1->CTRL0_b.SDODIS=0;
-    SN_SPI1->CTRL0_b.DL=7; SN_SPI1->CTRL0_b.SELDIS=1;
-    SN_SPI1->CTRL1_b.MLSB=0; SN_SPI1->CTRL1_b.CPOL=0; SN_SPI1->CTRL1_b.CPHA=0;
-    SN_SPI1->CLKDIV_b.DIV=0; SN_SPI1->DFDLY_b.DFETCH_EN=1; SN_SPI1->IE_b.RXFIFOTHIE=1;
-    SN_SPI1->CTRL0_b.FRESET=0b11; SN_SPI1->CTRL0_b.SPIEN=1;
+    spiStart(&SPID1, &spicfg);
+    SN_SPI1->DFDLY_b.DFETCH_EN = 1;                 // DMA source auto-fetch
+    SN_SPI1->CTRL0_b.FRESET = 0b11;
 }
 
 static inline void cs(bool hi) { gpio_write_pin(PANEL_CS, hi); }
@@ -231,15 +236,21 @@ void lcd_init(void) {
 // ---------------------------------------------------------------------------
 // SPI-to-SPI DMA (interrupt-driven via Vector58)
 // ---------------------------------------------------------------------------
-static bool spi1_xfer(uint8_t out) {
-    SN_SPI1->DATA = out; uint32_t n = 0;
-    while (SN_SPI1->STAT_b.BUSY) { if (++n > 500000u) return false; }
-    (void)SN_SPI1->DATA; return true;
+// Job-1 flash I/O now goes through the ChibiOS driver (SPID1). CS stays manual
+// (FLASH_CS via gpio) exactly as before; only the byte movement changed.
+static bool spi1_xfer(uint8_t out) { spiSend(&SPID1, 1, &out); return true; }
+static uint8_t spi1_rw(uint8_t out) {
+    uint8_t in = 0xFF;
+    spiExchange(&SPID1, 1, &out, &in);
+    return in;
 }
-__attribute__((unused)) static uint8_t spi1_rw(uint8_t out) {
+// Bare-metal single byte, used ONLY by the DMA blit command phase, which runs
+// with SPID1's NVIC vector disabled by the extension -- so the driver ISR (and
+// therefore spiSend/spiExchange) is unavailable and we must poll directly.
+static inline void spi1_raw_byte(uint8_t out) {
     SN_SPI1->DATA = out; uint32_t n = 0;
-    while (SN_SPI1->STAT_b.RX_EMPTY) { if (++n > 2000u) break; }
-    return (uint8_t)SN_SPI1->DATA;
+    while (SN_SPI1->STAT_b.BUSY) { if (++n > 500000u) break; }
+    (void)SN_SPI1->DATA;
 }
 // ---------------------------------------------------------------------------
 // External flash WRITE path (Stage D provisioning)
@@ -491,13 +502,15 @@ void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h
     lcd_flash_init();
     uint32_t bytes = (uint32_t)w * (uint32_t)h * 2u;
     blit_done = false;
-    // SPI0 side: driver borrows it for the DMA, loads the counts. Leaves 8-bit so
-    // the command phase (window) can go out before the pixel stream.
-    spiSN32FlashDmaPrepare(&SPID0, bytes);
+    // SPI0 (sink) into DMA config + counts; SPI1 (source) recorded for Step 2.
+    // SPI0 stays 8-bit so the command phase (window) can go out first.
+    spiSN32FlashDmaPrepare(&SPID0, &SPID1, bytes);
     SN_SPI1->CTRL0_b.FRESET = 0b11;                 // flash side (bare-metal, ours)
     lcd_window(x, y, x + w - 1, y + h - 1);         // via spiSend (SPI0 still 8-bit)
     gpio_write_pin(FLASH_CS, 0);
-    spi1_xfer(FLASH_CMD_READ); spi1_xfer((src>>16)&0xFF); spi1_xfer((src>>8)&0xFF); spi1_xfer(src&0xFF);
+    // Prepare() disabled SPID1's NVIC vector for the DMA window, so the READ+addr
+    // command goes out via the raw poll primitive (not spiSend, which needs the ISR).
+    spi1_raw_byte(FLASH_CMD_READ); spi1_raw_byte((src>>16)&0xFF); spi1_raw_byte((src>>8)&0xFF); spi1_raw_byte(src&0xFF);
     SN_SPI1->IC = 0x3F;
     // Flip to 16-bit pixels and arm; blit_done_cb fires at completion.
     spiSN32FlashDmaFire(&SPID0, blit_done_cb);

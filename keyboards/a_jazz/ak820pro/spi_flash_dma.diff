@@ -1,45 +1,12 @@
---- a/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.h
-+++ b/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.h
-@@ -180,10 +180,33 @@
- extern SPIDriver SPID1;
- #endif
- 
-+#if defined(SN32_SPI0_FLASH_DMA) || defined(__DOXYGEN__)
-+/* SN32-specific SPI-to-SPI flash->LCD DMA extension.
-+ *
-+ * The SN32 "DMA" is the EBI SPI1(RX)->SPI0(TX) engine: peripheral-to-peripheral,
-+ * no RAM source, so it does not fit the standard hal_spi buffer API. This extra
-+ * entrypoint lets an application stream flash-resident pixels straight to the
-+ * panel while still using this driver for normal (CPU/FIFO) SPI0 transfers.
-+ *
-+ * Usage (SPI0 = the LCD sink):
-+ *   spiSN32FlashDmaPrepare(&SPID0, len);   // SPI0 -> 8-bit DMA config, counts loaded
-+ *   ...caller sets the panel window and clocks the flash READ+addr on SPI1...
-+ *   spiSN32FlashDmaFire(&SPID0, cb);       // flip to 16-bit words, arm; non-blocking
-+ * `cb` runs in the SPI0 ISR at transfer-complete, after the bus drains and the
-+ * DMA/16-bit mode are torn down; use it to deassert the flash/panel CS lines.
-+ * Completion is dispatched by this driver's SPI0 handler (no app-side vector). */
-+typedef void (*spi_sn32_dma_cb_t)(void);
-+#endif
-+
- #ifdef __cplusplus
- extern "C" {
- #endif
-   void spi_lld_init(void);
-+#if defined(SN32_SPI0_FLASH_DMA)
-+  void spiSN32FlashDmaPrepare(SPIDriver *lcd, uint32_t len);
-+  void spiSN32FlashDmaFire(SPIDriver *lcd, spi_sn32_dma_cb_t cb);
-+  bool spiSN32FlashDmaBusy(SPIDriver *lcd);
-+#endif
-   msg_t spi_lld_start(SPIDriver *spip);
-   void spi_lld_stop(SPIDriver *spip);
- #if (SPI_SELECT_MODE == SPI_SELECT_MODE_LLD) || defined(__DOXYGEN__)
+diff --git a/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c b/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c
+index 36652b9f0d..d33547a84d 100644
 --- a/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c
 +++ b/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c
-@@ -124,6 +124,95 @@
+@@ -123,6 +123,132 @@ static inline void spi_lld_irq_handler(SPIDriver *spip) {
+   }
  }
  
- /*===========================================================================*/
++/*===========================================================================*/
 +/* SN32 SPI-to-SPI flash->LCD DMA extension.                                  */
 +/*===========================================================================*/
 +/* The SPI-to-SPI DMA registers live on SPI0 itself (DMACTRL/DMACNT/DMAHTCNT,
@@ -50,6 +17,19 @@
 +
 +static spi_sn32_dma_cb_t sn32_dma_cb;
 +static volatile bool     sn32_dma_busy = false;
++/* The flash-source SPI instance borrowed for the DMA (SPI1). Held for Step 2,
++ * when SPID1 is spiStart()ed and we must keep its driver handler from running
++ * during the transfer.
++ *
++ * IMPORTANT: do NOT mask the source's RXFIFOTHIE to do that -- on the SN32 the
++ * RX-threshold event that RXFIFOTHIE enables is ALSO what triggers the SPI1->SPI0
++ * DMA request. Clearing it stalls the DMA (it never fires, never completes, and
++ * SPI0 is left in DMA mode -> the next spiSend hangs). The correct isolation,
++ * once SPID1 is live, is nvicDisableVector(SN32_SPI1_NUMBER) for the DMA window
++ * (keeps the threshold event -> keeps the DMA trigger, just skips the handler),
++ * re-enabled on completion. Until SPID1 is started its vector is already off,
++ * so this instance is currently only recorded, not touched. */
++static SPIDriver        *sn32_dma_flash = NULL;
 +
 +/* SPI0 in DMA-ready config: 8-bit words (command phase), mode 0, 24 MHz, data
 + * fetch delay, re-latched by FRESET. Matches the hand-tuned bare-metal setup. */
@@ -73,8 +53,21 @@
 +  SN_SPI0->CTRL0_b.SPIEN  = 1;
 +}
 +
-+void spiSN32FlashDmaPrepare(SPIDriver *lcd, uint32_t len) {
++void spiSN32FlashDmaPrepare(SPIDriver *lcd, SPIDriver *flash, uint32_t len) {
 +  (void)lcd;
++  /* Borrow the source instance for the DMA window. Do NOT touch its RXFIFOTHIE:
++     that bit gates the SPI1 RX-threshold event that triggers the DMA request, so
++     clearing it would stall the transfer. Instead disable its NVIC vector -- the
++     threshold event (and thus the DMA trigger) stays live, but the driver's
++     SN32_SPI1_HANDLER won't dispatch and race the DMA draining the RX FIFO. The
++     command phase (raw READ+addr the caller clocks next) also relies on the
++     vector being off. Re-enabled in sn32_flash_dma_isr() on completion. */
++  sn32_dma_flash = flash;
++#if SN32_SPI_USE_SPI1 == TRUE
++  if (flash == &SPID1) {
++    nvicDisableVector(SN32_SPI1_NUMBER);
++  }
++#endif
 +  sn32_flash_dma_config();
 +  SN_SPI0->CTRL0_b.FRESET = 0b11;
 +  SN_SPI0->DMACTRL_b.DMAEN = 0;
@@ -120,6 +113,17 @@
 +       do. Restoring the driver's IE here is harmless for the former. */
 +    SN_SPI0->CTRL0_b.RXFIFOTH = 0;
 +    SN_SPI0->IE = 0b0100;                    /* RXFIFOTHIE */
++#if SN32_SPI_USE_SPI1 == TRUE
++    if (sn32_dma_flash == &SPID1) {
++      /* Flush any stale RX + pending flag so handing the vector back doesn't
++         spuriously dispatch the idle driver handler, then re-enable it. */
++      SN_SPI1->CTRL0_b.FRESET = 0b11;
++      SN_SPI1->IC = 0x3F;
++      nvicClearPending(SN32_SPI1_NUMBER);
++      nvicEnableVector(SN32_SPI1_NUMBER, SN32_SPI_SPI1_IRQ_PRIORITY);
++    }
++#endif
++    sn32_dma_flash = NULL;
 +    sn32_dma_busy = false;
 +    if (sn32_dma_cb) sn32_dma_cb();          /* caller drops flash/panel CS */
 +  }
@@ -128,11 +132,10 @@
 +
 +#endif /* SN32_SPI0_FLASH_DMA */
 +
-+/*===========================================================================*/
+ /*===========================================================================*/
  /* Driver interrupt handlers.                                                */
  /*===========================================================================*/
- 
-@@ -131,7 +220,11 @@
+@@ -131,7 +257,11 @@ static inline void spi_lld_irq_handler(SPIDriver *spip) {
  OSAL_IRQ_HANDLER(SN32_SPI0_HANDLER) {
    OSAL_IRQ_PROLOGUE();
  
@@ -145,3 +148,41 @@
  
    OSAL_IRQ_EPILOGUE();
  }
+diff --git a/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.h b/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.h
+index 893b8fff6b..b2053d028b 100644
+--- a/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.h
++++ b/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.h
+@@ -180,10 +180,33 @@ extern SPIDriver SPID0;
+ extern SPIDriver SPID1;
+ #endif
+ 
++#if defined(SN32_SPI0_FLASH_DMA) || defined(__DOXYGEN__)
++/* SN32-specific SPI-to-SPI flash->LCD DMA extension.
++ *
++ * The SN32 "DMA" is the EBI SPI1(RX)->SPI0(TX) engine: peripheral-to-peripheral,
++ * no RAM source, so it does not fit the standard hal_spi buffer API. This extra
++ * entrypoint lets an application stream flash-resident pixels straight to the
++ * panel while still using this driver for normal (CPU/FIFO) SPI0 transfers.
++ *
++ * Usage (SPI0 = the LCD sink):
++ *   spiSN32FlashDmaPrepare(&SPID0, &SPID1, len); // SPI0 sink + SPI1 source borrowed
++ *   ...caller sets the panel window and clocks the flash READ+addr on SPI1...
++ *   spiSN32FlashDmaFire(&SPID0, cb);       // flip to 16-bit words, arm; non-blocking
++ * `cb` runs in the SPI0 ISR at transfer-complete, after the bus drains and the
++ * DMA/16-bit mode are torn down; use it to deassert the flash/panel CS lines.
++ * Completion is dispatched by this driver's SPI0 handler (no app-side vector). */
++typedef void (*spi_sn32_dma_cb_t)(void);
++#endif
++
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+   void spi_lld_init(void);
++#if defined(SN32_SPI0_FLASH_DMA)
++  void spiSN32FlashDmaPrepare(SPIDriver *lcd, SPIDriver *flash, uint32_t len);
++  void spiSN32FlashDmaFire(SPIDriver *lcd, spi_sn32_dma_cb_t cb);
++  bool spiSN32FlashDmaBusy(SPIDriver *lcd);
++#endif
+   msg_t spi_lld_start(SPIDriver *spip);
+   void spi_lld_stop(SPIDriver *spip);
+ #if (SPI_SELECT_MODE == SPI_SELECT_MODE_LLD) || defined(__DOXYGEN__)
