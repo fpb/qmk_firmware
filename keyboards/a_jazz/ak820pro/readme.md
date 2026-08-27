@@ -43,26 +43,36 @@ See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_to
 
 ### What this branch is (the preferred flash-LCD build)
 
-`ak820pro-flashlcd-unified` is the **preferred** flash-resident-LCD branch. It draws
-the flash-tile dashboard (LCD art + GIF animations provisioned to external SPI flash
-by `ak820ctl`, no art baked into firmware) driven **entirely through the ChibiOS SN32
-SPI driver**: all panel commands/pixels go through `spiSend` (FIFO-batched by
-`spi_fifo_pump.diff`) and the flash→LCD DMA is the driver's `spiSN32FlashDma*`
-extension (`spi_flash_dma.diff`). SPI1 (flash reads) stays bare-metal.
+`ak820pro-flashlcd-unified-dualspi` is the **preferred** flash-resident-LCD branch. It
+draws the flash-tile dashboard (LCD art + GIF animations provisioned to external SPI
+flash by `ak820ctl`, no art baked into firmware) with **both SPI buses under the ChibiOS
+SN32 SPI driver**:
 
-**Why this over the bare-metal `tiles` branch:** using the standard SPI driver (rather
-than owning SPI0 with a hand-rolled `Vector58` bus) keeps the panel path maintainable
-and leaves **Quantum Painter available** if it is ever wanted again — at a cost of just
-+468 bytes and no measurable speed loss. Measured on hardware vs `tiles`:
+- **SPI0 (panel):** every command/pixel goes through `spiSend` (FIFO-batched by
+  `spi_fifo_pump.diff`).
+- **SPI1 (external flash):** all CPU-path flash I/O — index read, JEDEC, status,
+  write-enable, page program, sector erase — goes through `spiSend`/`spiExchange(&SPID1)`.
+- **flash→LCD DMA:** the driver's `spiSN32FlashDma*` extension (`spi_flash_dma.diff`)
+  borrows *both* instances for the transfer, isolating SPI1's driver handler by
+  disabling its NVIC vector for the DMA window (not by masking `RXFIFOTHIE`, which on
+  the SN32 also gates the DMA trigger).
 
-| | tiles (bare-metal) | unified (driver) |
-| --- | --- | --- |
-| flash | 76080 B | 76548 B (**+468**) |
-| idle matrix scan | ~1392 Hz | 1393 Hz |
-| full-redraw dip | — | 1361 Hz (~−2%) |
-| dashboard / animation | ✅ | ✅ |
+**Relation to `ak820pro-flashlcd-unified`:** this branch *is* unified plus the SPI1
+migration. `unified` drove the panel through the driver but left the flash (SPI1)
+bare-metal; dualspi finishes the job, so the only register-level flash code left is the
+irreducible SN32 peripheral-to-peripheral DMA / board specifics (SPI1 PFPA mux, EBI/LCD
+DMA clocks, the blit's `READ`+addr command phase) — peripheral-to-peripheral DMA is
+outside the `hal_spi` buffer model, so *some* extension is unavoidable. `unified` is kept
+as the SPI0-only-driver predecessor.
 
-`ak820pro-flashlcd-tiles` remains as the **minimal bare-metal alternative** — the same
+**Why the driver over a bare-metal bus:** using the standard SPI driver (rather than
+owning the buses with hand-rolled `Vector58`/register pokes) keeps the panel *and* flash
+paths maintainable and leaves **Quantum Painter available** if it is ever wanted again —
+at negligible cost. Hardware-validated on this branch: driver-based flash read, erase,
+program and CRC verify, plus the dashboard/animation DMA blits; matrix scan steady at
+~1392 Hz (full-redraw dip ~−2%).
+
+`ak820pro-flashlcd-tiles` remains the **minimal bare-metal alternative** — the same
 dashboard without `HAL_USE_SPI`, ~0.5 KB smaller and with no ChibiOS SPI dependency —
 for anyone who wants the leanest build and does not care about the QP option. (The
 `tx_pixels`/`lcd_fill_rect` CPU byte-swap here is not on the hot path: the dashboard is
@@ -70,8 +80,10 @@ for anyone who wants the leanest build and does not care about the QP option. (T
 
 ### ChibiOS submodule patches (all six required)
 
-This branch needs **five** working-tree patches applied to `lib/chibios-contrib`
-before building. They touch disjoint files, so order does not matter:
+This branch needs **six** working-tree patches applied to `lib/chibios-contrib`
+before building. Apply them in the order below — most touch disjoint files, but
+`spi_flash_dma.diff` edits the same SPI LLD as `spi_fifo_pump.diff` and must come
+after it:
 
     $ cd lib/chibios-contrib
     $ git apply ../../keyboards/a_jazz/ak820pro/hardware_pwm.diff
@@ -93,7 +105,7 @@ before building. They touch disjoint files, so order does not matter:
 
 **`efl_ramtext.diff`** — links the SN32F290 EFL flash program/erase (`efl_lld_program`, `efl_lld_start_erase_sector`, and the `sn32_flash_wait_busy` spin) into `.ramtext` so they execute from SRAM. VIA stores its dynamic keymaps in internal flash via EFL wear-leveling; with the flash routines running from flash, a program/erase stalls instruction/vector fetch long enough to delay the SPI0 DMA completion IRQ and lose the `CORTEX_ENABLE_WFI_IDLE` wakeup — the board hangs (no reboot after flash, then locks after a few keys). Running the flash ops from RAM keeps IRQs serviced, so `WFI_IDLE` can stay `TRUE` (lower idle current) with VIA enabled. Only matters on this branch (`HAL_USE_SPI TRUE` + VIA + WFI idle); harmless elsewhere.
 
-Note: all five are working-tree edits of the `lib/chibios-contrib` submodule and are discarded by `git submodule update`; re-apply if that happens. The submodule working tree is shared across branches, so after switching branches you may already have another branch's patches applied — `git -C lib/chibios-contrib status` shows what is live.
+Note: all six are working-tree edits of the `lib/chibios-contrib` submodule and are discarded by `git submodule update`; re-apply if that happens. The submodule working tree is shared across branches, so after switching branches you may already have another branch's patches applied — `git -C lib/chibios-contrib status` shows what is live.
 
 ## Bootloader
 
