@@ -8,7 +8,7 @@
 >
 > **Stage C is DONE**: the dashboard runs entirely on pre-rendered RGB565 tiles and the
 > QGF/QFF decoders are gone. This tile renderer now ships as the **`custom` backend** of
-> `ak820pro-qp-dualspi` (the standalone bare-metal `-tiles` branch it was first
+> `ak820pro-lcd-flash` (the standalone bare-metal `-tiles` branch it was first
 > proven on has been retired). Branch attributions below are historical.
 >
 > **Stage D is DONE too.** All art lives in external flash and is DMA-drawn; the

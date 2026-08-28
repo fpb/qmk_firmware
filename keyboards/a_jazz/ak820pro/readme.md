@@ -43,7 +43,7 @@ See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_to
 
 ### What this branch is (two dashboard backends on the dualspi base)
 
-`ak820pro-qp-dualspi` puts **two dashboard renderers on the same dualspi SPI
+`ak820pro-lcd-flash` puts **two dashboard renderers on the same dualspi SPI
 base** (both SPI buses under the ChibiOS SN32 SPI driver + the flash→LCD DMA extension),
 selected at build time:
 
@@ -109,7 +109,7 @@ after it:
 
 **`rtc_lld.diff`** — the SN32 RTC LLD itself (`hal_rtc_lld.c/.h`), plus the `platform.mk` line that pulls `RTC/driver.mk` into the build. Distinct from `i2c_fallback.diff`, which fixes the *I2C* path to the external PCF8563; this one is the ChibiOS RTC driver for the SN32's own on-chip RTC.
 
-**`spi_fifo_pump.diff`** — FIFO-batched pump for the ChibiOS SN32 SPI driver (`hal_spi_v2_lld`). The stock pump sends one byte per interrupt and waits for its RX word before the next, so SCLK sits idle for the whole IRQ latency between bytes. This primes the TX FIFO on kick-off and drains-all-RX + refills-to-full per IRQ (`RXFIFOTH=0` for tail delivery). It brings the driver up to what this port's bare-metal `tx_pipe` already did — which is why moving the panel onto the driver loses no throughput. Also on `-qp-singlespi`.
+**`spi_fifo_pump.diff`** — FIFO-batched pump for the ChibiOS SN32 SPI driver (`hal_spi_v2_lld`). The stock pump sends one byte per interrupt and waits for its RX word before the next, so SCLK sits idle for the whole IRQ latency between bytes. This primes the TX FIFO on kick-off and drains-all-RX + refills-to-full per IRQ (`RXFIFOTH=0` for tail delivery). It brings the driver up to what this port's bare-metal `tx_pipe` already did — which is why moving the panel onto the driver loses no throughput. Also on `-lcd-embedded`.
 
 **`spi_flash_dma.diff`** — the SPI-to-SPI flash→LCD DMA as a driver extension (`spiSN32FlashDmaPrepare`/`Fire`/`Busy`). The DMA registers live on SPI0 itself, so the driver borrows SPI0 for the data phase (8-bit command config → 16-bit pixel words), arms it, and services completion in its own SPI0 handler — restoring 8-bit **and the FIFO-mode interrupt enable** so a following `spiSend` still completes (the custom backend drives the driver directly between DMAs, unlike the QP backend which re-runs `spiStart` per QP flush — hence the `SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT` gate on the IE-restore). `graphics/lcd_bus.c` just calls the API. Gated by `SN32_SPI0_FLASH_DMA` (`mcuconf.h`).
 
