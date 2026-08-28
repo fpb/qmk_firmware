@@ -41,12 +41,28 @@ Make example for this keyboard (after setting up your build environment):
 
 See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_tools) and the [make instructions](https://docs.qmk.fm/#/getting_started_make_guide) for more information. Brand new to QMK? Start with our [Complete Newbs Guide](https://docs.qmk.fm/#/newbs).
 
-### What this branch is (the preferred flash-LCD build)
+### What this branch is (two dashboard backends on the dualspi base)
 
-`ak820pro-flashlcd-unified-dualspi` is the **preferred** flash-resident-LCD branch. It
-draws the flash-tile dashboard (LCD art + GIF animations provisioned to external SPI
-flash by `ak820ctl`, no art baked into firmware) with **both SPI buses under the ChibiOS
-SN32 SPI driver**:
+`ak820pro-flashlcd-dualspi-dual` puts **two dashboard renderers on the same dualspi SPI
+base** (both SPI buses under the ChibiOS SN32 SPI driver + the flash→LCD DMA extension),
+selected at build time:
+
+```
+qmk compile -kb a_jazz/ak820pro -km via                         # custom (default)
+qmk compile -kb a_jazz/ak820pro -km via -e DASHBOARD_BACKEND=qp # Quantum Painter
+```
+
+- **`custom`** (default) — bare-metal RGB565 **tile** dashboard; assets in external flash;
+  no Quantum Painter. (Identical to `ak820pro-flashlcd-unified-dualspi`.)
+- **`qp`** — **Quantum Painter** dashboard + splash from *embedded* qgf/qff assets, drawn
+  through the stock `gc9107_spi` driver.
+
+Both share the flash layer (SPID1 reads + `ak820ctl` provisioning) and stream animations via
+the same `spiSN32FlashDma*` extension; they differ only in the SPI0/panel path, the renderer,
+and asset encoding — gated by `DASHBOARD_BACKEND` + the `SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT`
+mcuconf macro (custom-only). See `docs/QP_DUALSPI_PLAN.md`.
+
+The rest of this section describes the **custom** backend (both SPI buses on the driver):
 
 - **SPI0 (panel):** every command/pixel goes through `spiSend` (FIFO-batched by
   `spi_fifo_pump.diff`).
