@@ -1,10 +1,14 @@
 # Plan — QP dashboard on the dualspi SPI base (and the two-backend endgame)
 
+> **Status: done.** This plan was realised on `ak820pro-flashlcd-dualspi-dual`, which now
+> carries both backends behind `-e DASHBOARD_BACKEND=custom|qp`. The two intermediate
+> single-backend branches it references below have been retired (folded in). Kept as the
+> design record.
+
 **Goal:** the dualspi SPI solution (SPI0+SPI1 on the ChibiOS driver, flash→LCD DMA extension
 borrowing both) as the shared base of two dashboard variants:
-1. **DMA-only / custom** — bare-metal tile dashboard = `ak820pro-flashlcd-unified-dualspi`.
-2. **QP** — Quantum Painter dashboard + splash + the same DMA animation = this branch
-   (`ak820pro-flashlcd-unified-dualspi-qp`).
+1. **DMA-only / custom** — bare-metal tile dashboard (now the `custom` backend).
+2. **QP** — Quantum Painter dashboard + splash + the same DMA animation (now the `qp` backend).
 
 ## Phase 1 (this branch) — get QP working on the dualspi base
 Port qp-lld's QP rendering onto the dualspi SPI base:

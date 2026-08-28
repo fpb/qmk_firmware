@@ -53,7 +53,7 @@ qmk compile -kb a_jazz/ak820pro -km via -e DASHBOARD_BACKEND=qp # Quantum Painte
 ```
 
 - **`custom`** (default) — bare-metal RGB565 **tile** dashboard; assets in external flash;
-  no Quantum Painter. (Identical to `ak820pro-flashlcd-unified-dualspi`.)
+  no Quantum Painter.
 - **`qp`** — **Quantum Painter** dashboard + splash from *embedded* qgf/qff assets, drawn
   through the stock `gc9107_spi` driver.
 
@@ -73,13 +73,12 @@ The rest of this section describes the **custom** backend (both SPI buses on the
   disabling its NVIC vector for the DMA window (not by masking `RXFIFOTHIE`, which on
   the SN32 also gates the DMA trigger).
 
-**Relation to `ak820pro-flashlcd-unified`:** this branch *is* unified plus the SPI1
-migration. `unified` drove the panel through the driver but left the flash (SPI1)
-bare-metal; dualspi finishes the job, so the only register-level flash code left is the
-irreducible SN32 peripheral-to-peripheral DMA / board specifics (SPI1 PFPA mux, EBI/LCD
-DMA clocks, the blit's `READ`+addr command phase) — peripheral-to-peripheral DMA is
-outside the `hal_spi` buffer model, so *some* extension is unavoidable. `unified` is kept
-as the SPI0-only-driver predecessor.
+**Both SPI buses on the driver:** an earlier step drove the panel (SPI0) through the
+driver but left the flash (SPI1) bare-metal; this branch finishes the job, so the only
+register-level flash code left is the irreducible SN32 peripheral-to-peripheral DMA /
+board specifics (SPI1 PFPA mux, EBI/LCD DMA clocks, the blit's `READ`+addr command
+phase) — peripheral-to-peripheral DMA is outside the `hal_spi` buffer model, so *some*
+extension is unavoidable.
 
 **Why the driver over a bare-metal bus:** using the standard SPI driver (rather than
 owning the buses with hand-rolled `Vector58`/register pokes) keeps the panel *and* flash
@@ -115,9 +114,9 @@ after it:
 
 **`rtc_lld.diff`** — the SN32 RTC LLD itself (`hal_rtc_lld.c/.h`), plus the `platform.mk` line that pulls `RTC/driver.mk` into the build. Distinct from `i2c_fallback.diff`, which fixes the *I2C* path to the external PCF8563; this one is the ChibiOS RTC driver for the SN32's own on-chip RTC.
 
-**`spi_fifo_pump.diff`** — FIFO-batched pump for the ChibiOS SN32 SPI driver (`hal_spi_v2_lld`). The stock pump sends one byte per interrupt and waits for its RX word before the next, so SCLK sits idle for the whole IRQ latency between bytes. This primes the TX FIFO on kick-off and drains-all-RX + refills-to-full per IRQ (`RXFIFOTH=0` for tail delivery). It brings the driver up to what this port's bare-metal `tx_pipe` already did — which is why the unified branch loses no throughput. Also on `-qp-lld` and `-full`.
+**`spi_fifo_pump.diff`** — FIFO-batched pump for the ChibiOS SN32 SPI driver (`hal_spi_v2_lld`). The stock pump sends one byte per interrupt and waits for its RX word before the next, so SCLK sits idle for the whole IRQ latency between bytes. This primes the TX FIFO on kick-off and drains-all-RX + refills-to-full per IRQ (`RXFIFOTH=0` for tail delivery). It brings the driver up to what this port's bare-metal `tx_pipe` already did — which is why moving the panel onto the driver loses no throughput. Also on `-full`.
 
-**`spi_flash_dma.diff`** — the SPI-to-SPI flash→LCD DMA as a driver extension (`spiSN32FlashDmaPrepare`/`Fire`/`Busy`). The DMA registers live on SPI0 itself, so the driver borrows SPI0 for the data phase (8-bit command config → 16-bit pixel words), arms it, and services completion in its own SPI0 handler — restoring 8-bit **and the FIFO-mode interrupt enable** so a following `spiSend` still completes (this branch drives the driver directly between DMAs, unlike `-qp-lld` which re-runs `spiStart` per QP flush). `graphics/lcd_bus.c` just calls the API. Gated by `SN32_SPI0_FLASH_DMA` (`mcuconf.h`). This is the same extension as `-qp-lld`'s, plus the IE-restore.
+**`spi_flash_dma.diff`** — the SPI-to-SPI flash→LCD DMA as a driver extension (`spiSN32FlashDmaPrepare`/`Fire`/`Busy`). The DMA registers live on SPI0 itself, so the driver borrows SPI0 for the data phase (8-bit command config → 16-bit pixel words), arms it, and services completion in its own SPI0 handler — restoring 8-bit **and the FIFO-mode interrupt enable** so a following `spiSend` still completes (the custom backend drives the driver directly between DMAs, unlike the QP backend which re-runs `spiStart` per QP flush — hence the `SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT` gate on the IE-restore). `graphics/lcd_bus.c` just calls the API. Gated by `SN32_SPI0_FLASH_DMA` (`mcuconf.h`).
 
 **`efl_ramtext.diff`** — links the SN32F290 EFL flash program/erase (`efl_lld_program`, `efl_lld_start_erase_sector`, and the `sn32_flash_wait_busy` spin) into `.ramtext` so they execute from SRAM. VIA stores its dynamic keymaps in internal flash via EFL wear-leveling; with the flash routines running from flash, a program/erase stalls instruction/vector fetch long enough to delay the SPI0 DMA completion IRQ and lose the `CORTEX_ENABLE_WFI_IDLE` wakeup — the board hangs (no reboot after flash, then locks after a few keys). Running the flash ops from RAM keeps IRQs serviced, so `WFI_IDLE` can stay `TRUE` (lower idle current) with VIA enabled. Only matters on this branch (`HAL_USE_SPI TRUE` + VIA + WFI idle); harmless elsewhere.
 
