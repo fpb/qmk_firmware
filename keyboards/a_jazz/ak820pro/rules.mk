@@ -1,8 +1,39 @@
-# The GC9107 panel + dashboard are driven entirely bare-metal (graphics/lcd_bus.c):
-# we own SPI0 (+ Vector58) for the interrupt-driven flash->LCD DMA, and decode QP's
-# qgf/qff asset blobs ourselves. No Quantum Painter runtime -- its concurrent main-loop
-# activity corrupted the background DMA. See docs/LCD_FLASH_LAYER.md.
-SRC   += graphics/lcd_bus.c
+# Dashboard backend selector. Both backends sit on the same dualspi SPI base (SPI0
+# + SPI1 through the ChibiOS driver, flash->LCD DMA extension). Pick with e.g.
+#   qmk compile -kb a_jazz/ak820pro -km via -e DASHBOARD_BACKEND=qp
+#   - custom (default): bare-metal RGB565 tile dashboard, assets in EXTERNAL flash,
+#                       SPI1 driver-managed (spiExchange). No Quantum Painter.
+#   - qp:               Quantum Painter dashboard + splash from EMBEDDED qgf/qff via
+#                       the stock gc9107_spi driver; SPI1 bare-metal DMA source.
+# See docs/QP_DUALSPI_PLAN.md.
+DASHBOARD_BACKEND ?= custom
+
+ifeq ($(strip $(DASHBOARD_BACKEND)),qp)
+    OPT_DEFS += -DDASHBOARD_BACKEND_QP
+    QUANTUM_PAINTER_ENABLE = yes
+    QUANTUM_PAINTER_DRIVERS += gc9107_spi
+    SRC += graphics/lcd_bus_qp.c
+    SRC += graphics/display_qp.c
+    # Embedded QP assets (dashboard icons, fonts, splash).
+    SRC += graphics/res/sonixqmk.qgf.c
+    SRC += graphics/res/Iosevka-Regular-30.qff.c
+    SRC += graphics/res/Iosevka-Medium-20.qff.c
+    SRC += graphics/res/apple_icon_24x24.qgf.c
+    SRC += graphics/res/windows_icon_24x24.qgf.c
+    SRC += graphics/res/cable_icon_24x24.qgf.c
+    SRC += graphics/res/bluetooth_icon_24x24.qgf.c
+    SRC += graphics/res/2_4_g_icon_24x24.qgf.c
+else
+    # (No -D needed: code only tests DASHBOARD_BACKEND_QP.)
+    # The qgf/qff asset files under graphics/res/ make QMK's data-driven build
+    # auto-enable Quantum Painter (info_rules.mk: QUANTUM_PAINTER_ENABLE ?= yes).
+    # The custom backend does not use QP, so force it off explicitly.
+    QUANTUM_PAINTER_ENABLE = no
+    # Bare-metal tile dashboard: we own SPI0 for the flash->LCD DMA and decode the
+    # qgf/qff asset blobs ourselves. Dashboard graphics live in EXTERNAL flash.
+    SRC += graphics/lcd_bus.c
+    SRC += graphics/display.c
+endif
 
 # CH582F wireless module exposed through QMK's official Bluetooth driver API.
 # BLUETOOTH_DRIVER = custom defines BLUETOOTH_ENABLE, CONNECTION_ENABLE and
@@ -18,12 +49,11 @@ USE_HAL_I2C_FALLBACK = yes
 
 SRC += bluetooth/ch582f_ajazz.c
 
-# Dashboard graphics now live in EXTERNAL FLASH, not firmware. Generate the blob
-# with `python3 graphics/res/mkraw.py --flash` and upload it once per keyboard:
+# Dashboard graphics (custom backend) live in EXTERNAL FLASH, not firmware. Generate
+# the blob with `python3 graphics/res/mkraw.py --flash` and upload once per keyboard:
 #   ak820ctl flash write 0x0CE0000 graphics/res/flash_assets.bin
 # The firmware reads the index at boot (flash_assets_init) and DMA-draws by id.
 
-SRC += graphics/display.c
 SRC += rtc/rtc.c
 VPATH += bluetooth
 VPATH += graphics

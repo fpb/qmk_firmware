@@ -72,6 +72,15 @@ static void qp_internal_display_timeout_task(void) {
 STATIC_ASSERT((QUANTUM_PAINTER_TASK_THROTTLE) > 0 && (QUANTUM_PAINTER_TASK_THROTTLE) < 1000, "QUANTUM_PAINTER_TASK_THROTTLE must be between 1 and 999");
 
 void qp_internal_task(void) {
+#ifdef QUANTUM_PAINTER_INTERNAL_TASK_DISABLE
+    // Opt out of QP's periodic housekeeping entirely. Intended for framebuffer-less
+    // (direct-write tft_panel) displays with no QP animations/timeout/LVGL, where this
+    // task's only net effect is the qp_flush() loop bracketing a no-op flush with
+    // qp_comms_start()/stop() -- i.e. toggling the panel CS. On a keyboard that also runs
+    // a concurrent bus-sharing DMA (see AK820 Pro flash->LCD animation) that stray CS
+    // toggle corrupts the in-flight transfer, so we suppress the task deterministically.
+    return;
+#else
     // Perform throttling of the internal processing of Quantum Painter
     static uint32_t last_tick = 0;
     uint32_t        now       = timer_read32();
@@ -107,4 +116,5 @@ void qp_internal_task(void) {
 #if !defined(QUANTUM_PAINTER_DEBUG_ENABLE_FLUSH_TASK_OUTPUT)
     debug_enable = old_debug_state;
 #endif // defined(QUANTUM_PAINTER_DEBUG_ENABLE_FLUSH_TASK_OUTPUT)
+#endif // QUANTUM_PAINTER_INTERNAL_TASK_DISABLE
 }

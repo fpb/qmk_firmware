@@ -85,3 +85,12 @@
 // switches. Bump EECONFIG_KB_DATA_VERSION if the layout changes.
 #define EECONFIG_KB_DATA_SIZE    4
 #define EECONFIG_KB_DATA_VERSION 1
+
+#ifdef DASHBOARD_BACKEND_QP
+// Quantum Painter dashboard backend (see rules.mk DASHBOARD_BACKEND=qp).
+#define QUANTUM_PAINTER_SUPPORTS_NATIVE_COLORS TRUE
+#define QUANTUM_PAINTER_SUPPORTS_256_PALETTE TRUE
+#define QUANTUM_PAINTER_DISPLAY_TIMEOUT 0
+// Suppress qp_internal_task's periodic qp_flush() CS toggle (corrupts the DMA).
+#define QUANTUM_PAINTER_INTERNAL_TASK_DISABLE
+#endif
