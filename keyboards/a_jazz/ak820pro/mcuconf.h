@@ -8,6 +8,11 @@
 #undef SN32_SPI_USE_SPI0
 #define SN32_SPI_USE_SPI0 TRUE
 #define SN32_SPI0_FLASH_DMA   /* flash->LCD DMA driver extension (hal_spi_v2_lld) */
+// Custom/tile backend drives the SPI0 driver directly between DMA blits (spiSend),
+// so the DMA completion must restore SPI0's FIFO-mode IRQ. (The QP backend re-runs
+// spiStart per flush and leaves this undefined.) Gates the restore in the shared
+// spi_flash_dma extension so one extension serves both backends.
+#define SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT
 
 /* dualspi WIP: bring SPI1 (external flash) under the ChibiOS SPI driver too.
  * Enabling the instance compiles SN32_SPI1_HANDLER (dormant until spiStart), and

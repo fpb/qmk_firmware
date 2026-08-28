@@ -1,8 +1,8 @@
 diff --git a/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c b/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c
-index 36652b9f0d..d33547a84d 100644
+index 36652b9f0d..374adbc308 100644
 --- a/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c
 +++ b/os/hal/ports/SN32/LLD/SN32F2xx/SPI/hal_spi_v2_lld.c
-@@ -123,6 +123,132 @@ static inline void spi_lld_irq_handler(SPIDriver *spip) {
+@@ -123,6 +123,137 @@ static inline void spi_lld_irq_handler(SPIDriver *spip) {
    }
  }
  
@@ -106,13 +106,18 @@ index 36652b9f0d..d33547a84d 100644
 +         (!SN_SPI0->STAT_b.TX_EMPTY || SN_SPI0->STAT_b.BUSY); g++) { }
 +    SN_SPI0->DMACTRL_b.DMAEN = 0;
 +    SN_SPI0->CTRL0_b.DL = 7;                 /* back to 8-bit */
++#if defined(SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT)
 +    /* Hand SPI0 back to the driver's FIFO mode: the DMA arm left the RX-threshold
 +       IRQ disabled (IE = DMA bits), so a subsequent spiSend would never complete.
-+       QP-driven callers re-run spiStart per flush and don't need this; callers
-+       that drive the driver directly between DMAs (e.g. a bare-metal dashboard)
-+       do. Restoring the driver's IE here is harmless for the former. */
++       This is for callers that drive the SPI0 driver DIRECTLY between DMAs (e.g. a
++       bare-metal/custom dashboard). QP-driven callers re-run spiStart per flush and
++       must NOT get this: leaving RXFIFOTHIE set on QP's idle SPID0 lets a stray
++       RX-threshold event dispatch the driver handler on a thread that was never
++       suspended -> crash. So this is gated: define the macro (mcuconf.h) for the
++       custom backend, leave it undefined for the QP backend. */
 +    SN_SPI0->CTRL0_b.RXFIFOTH = 0;
 +    SN_SPI0->IE = 0b0100;                    /* RXFIFOTHIE */
++#endif
 +#if SN32_SPI_USE_SPI1 == TRUE
 +    if (sn32_dma_flash == &SPID1) {
 +      /* Flush any stale RX + pending flag so handing the vector back doesn't
@@ -135,7 +140,7 @@ index 36652b9f0d..d33547a84d 100644
  /*===========================================================================*/
  /* Driver interrupt handlers.                                                */
  /*===========================================================================*/
-@@ -131,7 +257,11 @@ static inline void spi_lld_irq_handler(SPIDriver *spip) {
+@@ -131,7 +262,11 @@ static inline void spi_lld_irq_handler(SPIDriver *spip) {
  OSAL_IRQ_HANDLER(SN32_SPI0_HANDLER) {
    OSAL_IRQ_PROLOGUE();
  
