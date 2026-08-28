@@ -1,4 +1,4 @@
-# Plan — QP dashboard on the dualspi SPI base (and the two-backend endgame)
+# Plan — two dashboard backends on the flash-LCD (dual-SPI) base
 
 > **Status: done.** This plan was realised on `ak820pro-lcd-flash`, which now
 > carries both backends behind `-e DASHBOARD_BACKEND=custom|qp`. The two intermediate

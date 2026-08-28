@@ -5,7 +5,7 @@
 #                       SPI1 driver-managed (spiExchange). No Quantum Painter.
 #   - qp:               Quantum Painter dashboard + splash from EMBEDDED qgf/qff via
 #                       the stock gc9107_spi driver; SPI1 bare-metal DMA source.
-# See docs/QP_DUALSPI_PLAN.md.
+# See docs/LCD_FLASH_PLAN.md.
 DASHBOARD_BACKEND ?= custom
 
 ifeq ($(strip $(DASHBOARD_BACKEND)),qp)

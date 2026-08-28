@@ -60,7 +60,7 @@ qmk compile -kb a_jazz/ak820pro -km via -e DASHBOARD_BACKEND=qp # Quantum Painte
 Both share the flash layer (SPID1 reads + `ak820ctl` provisioning) and stream animations via
 the same `spiSN32FlashDma*` extension; they differ only in the SPI0/panel path, the renderer,
 and asset encoding — gated by `DASHBOARD_BACKEND` + the `SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT`
-mcuconf macro (custom-only). See `docs/QP_DUALSPI_PLAN.md`.
+mcuconf macro (custom-only). See `docs/LCD_FLASH_PLAN.md`.
 
 The rest of this section describes the **custom** backend (both SPI buses on the driver):
 
