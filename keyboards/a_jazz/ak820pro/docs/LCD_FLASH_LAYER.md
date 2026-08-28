@@ -6,8 +6,10 @@
 > now the **forward** roadmap (what's left) plus the design rationale, corrected for what we
 > actually learned. Superseded predictions are called out inline.
 >
-> **Stage C is DONE** on `ak820pro-flashlcd-tiles`: the dashboard runs entirely on
-> pre-rendered RGB565 tiles and the QGF/QFF decoders are gone.
+> **Stage C is DONE**: the dashboard runs entirely on pre-rendered RGB565 tiles and the
+> QGF/QFF decoders are gone. This tile renderer now ships as the **`custom` backend** of
+> `ak820pro-flashlcd-dualspi-dual` (the standalone bare-metal `-tiles` branch it was first
+> proven on has been retired). Branch attributions below are historical.
 >
 > **Stage D is DONE too.** All art lives in external flash and is DMA-drawn; the
 > firmware embeds none of it. Firmware dropped **133556 -> 75380 bytes (58 KB

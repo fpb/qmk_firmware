@@ -10,7 +10,6 @@ baked into firmware; it is provisioned to flash from the host with `ak820ctl`.
 | Branch | What it is |
 |--------|-----------|
 | **`ak820pro-flashlcd-dualspi-dual`** (preferred) | Two dashboard renderers on one **dualspi** SPI base (both SPI buses through the ChibiOS SN32 SPI driver), chosen at build time: `-e DASHBOARD_BACKEND=custom` (default, bare-metal RGB565 tiles from external flash) or `-e DASHBOARD_BACKEND=qp` (Quantum Painter dashboard + splash from embedded qgf/qff via the stock `gc9107_spi` driver). Both share the flash layer (`graphics/flash_io.c` — SPID1 reads + `ak820ctl` provisioning) and the animation DMA; they differ only in the SPI0/panel path, renderer, and asset encoding (gated by `DASHBOARD_BACKEND` + the `SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT` mcuconf macro). |
-| `ak820pro-flashlcd-tiles` | The **leanest** build: the custom tile dashboard fully bare-metal — owns SPI0 directly, no `HAL_USE_SPI`, no ChibiOS SPI dependency (~0.5 KB smaller). |
 | `ak820pro-full` | Static QP dashboard with **all art embedded in firmware**; no external flash, no animations, 4 submodule patches. The simplest QP build. |
 
 ## SN32 gotchas worth remembering

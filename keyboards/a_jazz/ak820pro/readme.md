@@ -87,11 +87,6 @@ at negligible cost. Hardware-validated on this branch: driver-based flash read, 
 program and CRC verify, plus the dashboard/animation DMA blits; matrix scan steady at
 ~1392 Hz (full-redraw dip ~−2%).
 
-`ak820pro-flashlcd-tiles` remains the **minimal bare-metal alternative** — the same
-dashboard without `HAL_USE_SPI`, ~0.5 KB smaller and with no ChibiOS SPI dependency —
-for anyone who wants the leanest build and does not care about the QP option. (The
-`tx_pixels`/`lcd_fill_rect` CPU byte-swap here is not on the hot path: the dashboard is
-100% flash-DMA, so those helpers are unused.)
 
 ### ChibiOS submodule patches (all six required)
 
