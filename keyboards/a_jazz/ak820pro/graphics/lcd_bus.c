@@ -21,14 +21,12 @@ extern void display_set_paused(bool paused);   // graphics/display.c
 #define PANEL_DC   D14
 #define PANEL_CS   B8
 #define PANEL_RST  A17
-#define FLASH_CS   A13
 
 #define FRAME_W 128
 #define FRAME_H 128
 #define FRAME_BYTES (FRAME_W * FRAME_H * 2)
 #define LCD_OFF_X 1
 #define LCD_OFF_Y 2
-#define FLASH_CMD_READ 0x03
 
 // GC9107 MADCTL. Rotation 270 = BGR(0x08) | MV(0x20) | MY(0x80) = 0xA8. The dashboard
 // and the animation share this orientation.
@@ -76,28 +74,6 @@ static const SPIConfig spicfg = {
     .clkdiv = 0,                                                // 24 MHz
 };
 
-static bool spi1_inited = false;
-static void spi1_setup(void) {
-    // [dualspi Step 2] SPI1 (external flash) is now a ChibiOS driver instance
-    // (SPID1). spiStart configures CTRL0/CTRL1/CLKDIV (8-bit, mode 0, 24 MHz --
-    // reuse the panel's spicfg), enables the SPI1 clock (AHB bit 13) + NVIC
-    // vector, and sets RXFIFOTHIE/SPIEN. We still apply the SN32 specifics the
-    // generic driver config does not: the EBI/LCD DMA-datapath clocks, the SPI1
-    // PFPA pin-mux, and the DMA auto-fetch (DFETCH_EN). Job-1 flash I/O now goes
-    // through spiSend/spiExchange(&SPID1); only the DMA blit command phase still
-    // pokes SN_SPI1 directly (with the vector disabled -- see lcd_blit_flash).
-    SN_SYS1->AHBCLKEN |= (1u << 15) | (1u << 26);   // EBI+LCD (shared DMA datapath)
-    // NOTE: do NOT touch SN_FLASH->LPCTRL here. ChibiOS sets it to 0x5AFA0029 (correct
-    // wait-states for 48MHz). Overriding it to the ">48MHz" preset (0x39) added extra
-    // internal-flash wait-states that slowed CPU instruction fetch (~5% matrix-scan
-    // drop that persisted after the first animation). It was never needed for the DMA.
-    SN_PFPA->SPI_b.MISO1 = 0b01; SN_PFPA->SPI_b.MOSI1 = 0b01;
-    SN_PFPA->SPI_b.SCK1 = 0b11;  SN_PFPA->SPI_b.SEL1  = 0b01;
-    gpio_set_pin_output(FLASH_CS); gpio_write_pin(FLASH_CS, 1);
-    spiStart(&SPID1, &spicfg);
-    SN_SPI1->DFDLY_b.DFETCH_EN = 1;                 // DMA source auto-fetch
-    SN_SPI1->CTRL0_b.FRESET = 0b11;
-}
 
 static inline void cs(bool hi) { gpio_write_pin(PANEL_CS, hi); }
 static inline void dc(bool data){ gpio_write_pin(PANEL_DC, data); }
@@ -233,164 +209,6 @@ void lcd_init(void) {
     send_seq(seq, sizeof(seq));
 }
 
-// ---------------------------------------------------------------------------
-// SPI-to-SPI DMA (interrupt-driven via Vector58)
-// ---------------------------------------------------------------------------
-// Job-1 flash I/O now goes through the ChibiOS driver (SPID1). CS stays manual
-// (FLASH_CS via gpio) exactly as before; only the byte movement changed.
-static bool spi1_xfer(uint8_t out) { spiSend(&SPID1, 1, &out); return true; }
-static uint8_t spi1_rw(uint8_t out) {
-    uint8_t in = 0xFF;
-    spiExchange(&SPID1, 1, &out, &in);
-    return in;
-}
-// Bare-metal single byte, used ONLY by the DMA blit command phase, which runs
-// with SPID1's NVIC vector disabled by the extension -- so the driver ISR (and
-// therefore spiSend/spiExchange) is unavailable and we must poll directly.
-static inline void spi1_raw_byte(uint8_t out) {
-    SN_SPI1->DATA = out; uint32_t n = 0;
-    while (SN_SPI1->STAT_b.BUSY) { if (++n > 500000u) break; }
-    (void)SN_SPI1->DATA;
-}
-// ---------------------------------------------------------------------------
-// External flash WRITE path (Stage D provisioning)
-//
-// Everything here is non-blocking with respect to the *device*: a command is
-// issued over SPI (microseconds) and the chip then goes busy on its own -- a
-// page program takes ~1-3 ms, a 4K sector erase 50-300 ms. Blocking the matrix
-// scan for 300 ms is not acceptable, so callers must poll flash_busy() instead
-// of waiting here. Every SPI-level spin below is bounded; an unbounded one
-// hangs the keyboard before USB enumerates.
-// ---------------------------------------------------------------------------
-#define FLASH_CMD_WREN      0x06
-#define FLASH_CMD_RDSR      0x05
-#define FLASH_CMD_PAGE_PROG 0x02
-#define FLASH_CMD_SEC_ERASE 0x20
-#define FLASH_CMD_JEDEC     0x9F
-#define FLASH_PAGE          256u
-#define FLASH_SECTOR        4096u
-#define FLASH_CHIP_SIZE     0x1000000u   // PY25Q128HA, 16MB
-
-// Write policy. The stock LCD assets below 0x1AA000 are effectively
-// irreplaceable (our only dump of them has read damage), so they are never
-// writable. The animation slots are stock-owned but legitimately rewritable,
-// behind an explicit unlock. Our own Stage D assets live in the 3.12 MB that
-// has been erased (0xFF) since manufacture and is always writable.
-#define FLASH_ASSET_BASE    0x0CE0000u
-static bool flash_unlocked = false;
-
-void flash_set_unlocked(bool on) { flash_unlocked = on; }
-
-// Animation slots seen in stock firmware: V1.13 boot/user, V1.14 boot/user.
-static bool in_anim_slot(uint32_t a, uint32_t len) {
-    static const uint32_t slots[] = {0x1AA000u, 0x200000u, 0x38B000u, 0x540000u};
-    for (uint8_t i = 0; i < 4; i++) {
-        // Slots are sized generously: header + up to 132 frames.
-        if (a >= slots[i] && a + len <= slots[i] + 0x100u + 132u * 0x8000u) return true;
-    }
-    return false;
-}
-
-bool flash_writable(uint32_t addr, uint32_t len) {
-    if (!len || addr >= FLASH_CHIP_SIZE || len > FLASH_CHIP_SIZE - addr) return false;
-    if (addr >= FLASH_ASSET_BASE) return true;            // our region, always
-    return flash_unlocked && in_anim_slot(addr, len);     // stock slots, on request
-}
-
-static void flash_cmd_addr(uint8_t cmd, uint32_t a) {
-    gpio_write_pin(FLASH_CS, 0);
-    spi1_xfer(cmd);
-    spi1_xfer((a >> 16) & 0xFF); spi1_xfer((a >> 8) & 0xFF); spi1_xfer(a & 0xFF);
-}
-
-static uint8_t flash_status(void) {
-    gpio_write_pin(FLASH_CS, 0);
-    spi1_xfer(FLASH_CMD_RDSR);
-    uint8_t s = spi1_rw(0xFF);
-    gpio_write_pin(FLASH_CS, 1);
-    return s;
-}
-
-// True while a program/erase is still running (status bit 0 = WIP).
-bool flash_busy(void) {
-    lcd_flash_init();
-    return (flash_status() & 0x01) != 0;
-}
-
-static void flash_wren(void) {
-    gpio_write_pin(FLASH_CS, 0);
-    spi1_xfer(FLASH_CMD_WREN);
-    gpio_write_pin(FLASH_CS, 1);
-}
-
-uint32_t flash_jedec_id(void) {
-    lcd_flash_init();
-    gpio_write_pin(FLASH_CS, 0);
-    spi1_xfer(FLASH_CMD_JEDEC);
-    uint32_t id = ((uint32_t)spi1_rw(0xFF) << 16);
-    id |= ((uint32_t)spi1_rw(0xFF) << 8);
-    id |= spi1_rw(0xFF);
-    gpio_write_pin(FLASH_CS, 1);
-    return id;
-}
-
-void flash_read_bytes(uint32_t addr, uint8_t *dst, uint32_t len) {
-    lcd_flash_init();
-    flash_cmd_addr(FLASH_CMD_READ, addr);
-    for (uint32_t i = 0; i < len; i++) dst[i] = spi1_rw(0xFF);
-    gpio_write_pin(FLASH_CS, 1);
-}
-
-// Erase one 4K sector. Returns false if the address is not writable, the chip
-// is still busy, or the animation owns the bus. The chip stays busy for
-// 50-300 ms afterwards -- poll flash_busy().
-bool flash_erase_sector(uint32_t addr) {
-    if (anim_active()) return false;                 // SPI1 is shared with the DMA
-    addr &= ~(FLASH_SECTOR - 1u);
-    if (!flash_writable(addr, FLASH_SECTOR)) return false;
-    lcd_flash_init();
-    if (flash_busy()) return false;
-    flash_wren();
-    flash_cmd_addr(FLASH_CMD_SEC_ERASE, addr);
-    gpio_write_pin(FLASH_CS, 1);
-    return true;
-}
-
-// Program up to one 256-byte page. The write must not cross a page boundary --
-// the chip wraps to the start of the page instead of continuing, silently
-// corrupting data, so that case is rejected rather than split here.
-bool flash_page_program(uint32_t addr, const uint8_t *src, uint32_t len) {
-    if (anim_active()) return false;
-    if (!len || len > FLASH_PAGE) return false;
-    if ((addr & (FLASH_PAGE - 1u)) + len > FLASH_PAGE) return false;
-    if (!flash_writable(addr, len)) return false;
-    lcd_flash_init();
-    if (flash_busy()) return false;
-    flash_wren();
-    flash_cmd_addr(FLASH_CMD_PAGE_PROG, addr);
-    for (uint32_t i = 0; i < len; i++) spi1_xfer(src[i]);
-    gpio_write_pin(FLASH_CS, 1);
-    return true;
-}
-
-// CRC32 (IEEE, reflected) folded over a flash range, resuming from a caller-held
-// accumulator so a large verify can be split across many short calls. Reading a
-// whole range in one go blocks for the entire read -- see the CRC_SLICE note in
-// ak820pro.c. Seed with 0xFFFFFFFF and invert the final result.
-uint32_t flash_crc32_acc(uint32_t crc, uint32_t addr, uint32_t len) {
-    lcd_flash_init();
-    flash_cmd_addr(FLASH_CMD_READ, addr);
-    for (uint32_t i = 0; i < len; i++) {
-        crc ^= spi1_rw(0xFF);
-        for (uint8_t b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320u & (-(int32_t)(crc & 1)));
-    }
-    gpio_write_pin(FLASH_CS, 1);
-    return crc;
-}
-
-uint32_t flash_crc32(uint32_t addr, uint32_t len) {
-    return ~flash_crc32_acc(0xFFFFFFFFu, addr, len);
-}
 
 // ---------------------------------------------------------------------------
 // Flash-resident asset index (Stage D)
@@ -551,11 +369,6 @@ bool anim_active(void) { return anim_on; }
 
 static void set_madctl(uint8_t v) { cs(0); dc(0); tx8(0x36); dc(1); tx8(v); cs(1); }
 
-// SPI1 (external flash) is brought up lazily -- lcd_blit_flash does NOT do it,
-// so any caller outside the animation path must call this first.
-void lcd_flash_init(void) {
-    if (!spi1_inited) { spi1_setup(); spi1_inited = true; }
-}
 
 // One-shot self-contained flash blit: brings up SPI1, blits, waits with a bound,
 // then puts SPI0 back exactly as anim_toggle's stop path does so the dashboard

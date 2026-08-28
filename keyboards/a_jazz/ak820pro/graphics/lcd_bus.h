@@ -6,6 +6,7 @@
 // and dashboard are driven entirely bare-metal (no Quantum Painter, no ChibiOS SPI).
 // See docs/LCD_FLASH_LAYER.md.
 #pragma once
+#include "flash_io.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -31,7 +32,6 @@ bool lcd_blit_busy(void);
 void lcd_blit_flash_probe(uint32_t src, uint16_t w, uint16_t h);
 // Brings up SPI1 (external flash). lcd_blit_flash does not do this itself, so
 // call it before any blit outside the animation path.
-void lcd_flash_init(void);
 
 // --- external flash WRITE path (Stage D provisioning) -----------------------
 // Device-asynchronous: the command returns as soon as it is on the wire, then
@@ -40,20 +40,11 @@ void lcd_flash_init(void);
 // All of these refuse to run while anim_active(), since SPI1 feeds the DMA.
 #define FLASH_ASSET_BASE 0x0CE0000u   // 3.12 MB erased since manufacture
 
-bool     flash_busy(void);
-bool     flash_erase_sector(uint32_t addr);                              // 4K
-bool     flash_page_program(uint32_t addr, const uint8_t *src, uint32_t len);
-void     flash_read_bytes(uint32_t addr, uint8_t *dst, uint32_t len);
-uint32_t flash_crc32(uint32_t addr, uint32_t len);
 // Resumable form: fold len bytes into crc. Seed 0xFFFFFFFF, invert at the end.
 // Lets a big verify be split into short calls instead of one blocking read.
-uint32_t flash_crc32_acc(uint32_t crc, uint32_t addr, uint32_t len);
-uint32_t flash_jedec_id(void);
 // Writes are refused below FLASH_ASSET_BASE unless unlocked, and even then only
 // inside a known animation slot. The stock LCD assets are never writable: our
 // only dump of them has read damage, so they cannot be restored.
-bool     flash_writable(uint32_t addr, uint32_t len);
-void     flash_set_unlocked(bool on);
 
 // --- flash-resident assets (Stage D) ----------------------------------------
 // Uploaded by `ak820ctl flash write 0x0CE0000 flash_assets.bin`. The asset

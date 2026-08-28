@@ -54,6 +54,7 @@ SRC += bluetooth/ch582f_ajazz.c
 #   ak820ctl flash write 0x0CE0000 graphics/res/flash_assets.bin
 # The firmware reads the index at boot (flash_assets_init) and DMA-draws by id.
 
+SRC += graphics/flash_io.c
 SRC += rtc/rtc.c
 VPATH += bluetooth
 VPATH += graphics
