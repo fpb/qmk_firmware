@@ -44,37 +44,130 @@ extern void display_set_paused(bool paused);   // graphics/display.c
 // this file no longer configures SPI0 or hooks the vector for the DMA.
 
 // ---------------------------------------------------------------------------
-// SPI1 (external flash) — QP backend: bare-metal, DMA-source only.
+// SPI1 (external flash) — unified with the custom backend (dualspi base).
 //
-// The dualspi base makes SPI1 a ChibiOS driver instance (SPID1) so the custom
-// backend can do CPU-path flash I/O through spiExchange(&SPID1). The QP backend
-// has NO such I/O -- it embeds its dashboard/splash assets, so flash is only the
-// animation DMA source. So we DON'T spiStart SPID1 here (its handler would never
-// have a valid transfer to complete; re-enabling its vector after a DMA would
-// resume an uninitialised thread ref and crash). SPI1 stays bare-metal and the
-// blit passes flash=NULL to the extension, which then skips all SPI1-vector
-// handling. RXFIFOTHIE stays set: on the SN32 it gates the RX-threshold event
-// that triggers the DMA request.
+// SPI1 is a ChibiOS driver instance (SPID1): flash reads + provisioning go through
+// spiExchange(&SPID1); the DMA blit passes &SPID1 (hardware-confirmed: the SPI0
+// restore-gate was the real fix, not SPI1 handling). Only the DMA command phase
+// pokes SN_SPI1 directly (spi1_raw_byte), with the vector disabled by the extension.
+// NOTE: this flash layer is duplicated from the custom lcd_bus.c; a later polish
+// factors it into a shared flash_io.c.
 // ---------------------------------------------------------------------------
+static const SPIConfig flashcfg = {
+    .ctrl0  = SPI_DATA_LENGTH(8),
+    .ctrl1  = SPI_MLSB_MSB | SPI_CPOL_LOW | SPI_CPHA_FALLING,   // mode 0, MSB first
+    .clkdiv = 0,                                                // 24 MHz
+};
 static bool spi1_inited = false;
 static void spi1_setup(void) {
-    SN_SYS1->AHBCLKEN |= (1u << 13);                 // SPI1 clock (no spiStart to do it)
     SN_SYS1->AHBCLKEN |= (1u << 15) | (1u << 26);    // EBI+LCD (shared DMA datapath)
     SN_PFPA->SPI_b.MISO1 = 0b01; SN_PFPA->SPI_b.MOSI1 = 0b01;
     SN_PFPA->SPI_b.SCK1 = 0b11;  SN_PFPA->SPI_b.SEL1  = 0b01;
     gpio_set_pin_output(FLASH_CS); gpio_write_pin(FLASH_CS, 1);
-    SN_SPI1->CTRL0_b.SPIEN=0; SN_SPI1->CTRL0_b.MS=0; SN_SPI1->CTRL0_b.SDODIS=0;
-    SN_SPI1->CTRL0_b.DL=7; SN_SPI1->CTRL0_b.SELDIS=1;
-    SN_SPI1->CTRL1_b.MLSB=0; SN_SPI1->CTRL1_b.CPOL=0; SN_SPI1->CTRL1_b.CPHA=0;
-    SN_SPI1->CLKDIV_b.DIV=0; SN_SPI1->DFDLY_b.DFETCH_EN=1; SN_SPI1->IE_b.RXFIFOTHIE=1;
-    SN_SPI1->CTRL0_b.FRESET=0b11; SN_SPI1->CTRL0_b.SPIEN=1;
+    spiStart(&SPID1, &flashcfg);
+    SN_SPI1->DFDLY_b.DFETCH_EN = 1;                  // DMA source auto-fetch
+    SN_SPI1->CTRL0_b.FRESET = 0b11;
 }
+void lcd_flash_init(void) { if (!spi1_inited) { spi1_setup(); spi1_inited = true; } }
+static bool spi1_xfer(uint8_t out) { spiSend(&SPID1, 1, &out); return true; }
+static uint8_t spi1_rw(uint8_t out) { uint8_t in = 0xFF; spiExchange(&SPID1, 1, &out, &in); return in; }
 // Bare-metal single byte on SPI1, used for the DMA READ+addr command phase.
 static inline void spi1_raw_byte(uint8_t out) {
     SN_SPI1->DATA = out; uint32_t n = 0;
     while (SN_SPI1->STAT_b.BUSY) { if (++n > 500000u) break; }
     (void)SN_SPI1->DATA;
 }
+
+// ---- External flash provisioning (duplicated from custom lcd_bus.c) --------
+#define FLASH_CMD_WREN      0x06
+#define FLASH_CMD_RDSR      0x05
+#define FLASH_CMD_PAGE_PROG 0x02
+#define FLASH_CMD_SEC_ERASE 0x20
+#define FLASH_CMD_JEDEC     0x9F
+#define FLASH_PAGE          256u
+#define FLASH_SECTOR        4096u
+#define FLASH_CHIP_SIZE     0x1000000u
+#define FLASH_ASSET_BASE    0x0CE0000u
+static bool flash_unlocked = false;
+void flash_set_unlocked(bool on) { flash_unlocked = on; }
+static bool in_anim_slot(uint32_t a, uint32_t len) {
+    static const uint32_t slots[] = {0x1AA000u, 0x200000u, 0x38B000u, 0x540000u};
+    for (uint8_t i = 0; i < 4; i++)
+        if (a >= slots[i] && a + len <= slots[i] + 0x100u + 132u * 0x8000u) return true;
+    return false;
+}
+bool flash_writable(uint32_t addr, uint32_t len) {
+    if (!len || addr >= FLASH_CHIP_SIZE || len > FLASH_CHIP_SIZE - addr) return false;
+    if (addr >= FLASH_ASSET_BASE) return true;
+    return flash_unlocked && in_anim_slot(addr, len);
+}
+static void flash_cmd_addr(uint8_t cmd, uint32_t a) {
+    gpio_write_pin(FLASH_CS, 0);
+    spi1_xfer(cmd);
+    spi1_xfer((a >> 16) & 0xFF); spi1_xfer((a >> 8) & 0xFF); spi1_xfer(a & 0xFF);
+}
+static uint8_t flash_status(void) {
+    gpio_write_pin(FLASH_CS, 0);
+    spi1_xfer(FLASH_CMD_RDSR);
+    uint8_t s = spi1_rw(0xFF);
+    gpio_write_pin(FLASH_CS, 1);
+    return s;
+}
+bool flash_busy(void) { lcd_flash_init(); return (flash_status() & 0x01) != 0; }
+static void flash_wren(void) {
+    gpio_write_pin(FLASH_CS, 0); spi1_xfer(FLASH_CMD_WREN); gpio_write_pin(FLASH_CS, 1);
+}
+uint32_t flash_jedec_id(void) {
+    lcd_flash_init();
+    gpio_write_pin(FLASH_CS, 0);
+    spi1_xfer(FLASH_CMD_JEDEC);
+    uint32_t id = ((uint32_t)spi1_rw(0xFF) << 16);
+    id |= ((uint32_t)spi1_rw(0xFF) << 8); id |= spi1_rw(0xFF);
+    gpio_write_pin(FLASH_CS, 1);
+    return id;
+}
+void flash_read_bytes(uint32_t addr, uint8_t *dst, uint32_t len) {
+    lcd_flash_init();
+    flash_cmd_addr(FLASH_CMD_READ, addr);
+    for (uint32_t i = 0; i < len; i++) dst[i] = spi1_rw(0xFF);
+    gpio_write_pin(FLASH_CS, 1);
+}
+bool flash_erase_sector(uint32_t addr) {
+    if (anim_active()) return false;
+    addr &= ~(FLASH_SECTOR - 1u);
+    if (!flash_writable(addr, FLASH_SECTOR)) return false;
+    lcd_flash_init();
+    if (flash_busy()) return false;
+    flash_wren();
+    flash_cmd_addr(FLASH_CMD_SEC_ERASE, addr);
+    gpio_write_pin(FLASH_CS, 1);
+    return true;
+}
+bool flash_page_program(uint32_t addr, const uint8_t *src, uint32_t len) {
+    if (anim_active()) return false;
+    if (!len || len > FLASH_PAGE) return false;
+    if ((addr & (FLASH_PAGE - 1u)) + len > FLASH_PAGE) return false;
+    if (!flash_writable(addr, len)) return false;
+    lcd_flash_init();
+    if (flash_busy()) return false;
+    flash_wren();
+    flash_cmd_addr(FLASH_CMD_PAGE_PROG, addr);
+    for (uint32_t i = 0; i < len; i++) spi1_xfer(src[i]);
+    gpio_write_pin(FLASH_CS, 1);
+    return true;
+}
+uint32_t flash_crc32_acc(uint32_t crc, uint32_t addr, uint32_t len) {
+    lcd_flash_init();
+    flash_cmd_addr(FLASH_CMD_READ, addr);
+    for (uint32_t i = 0; i < len; i++) {
+        crc ^= spi1_rw(0xFF);
+        for (uint8_t b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320u & (-(int32_t)(crc & 1)));
+    }
+    gpio_write_pin(FLASH_CS, 1);
+    return crc;
+}
+uint32_t flash_crc32(uint32_t addr, uint32_t len) { return ~flash_crc32_acc(0xFFFFFFFFu, addr, len); }
+// ---- end duplicated flash provisioning -------------------------------------
 
 // ---------------------------------------------------------------------------
 // LCD command/window helpers (bare-metal, used only while we hold SPI0).
@@ -111,7 +204,7 @@ static void blit_arm(uint32_t addr) {
     blit_done = false;
     // SPI0 side: DMA-ready config + counts (driver borrows SPI0). flash=NULL: SPI1
     // is bare-metal here (QP backend), so the extension skips SPI1-vector handling.
-    spiSN32FlashDmaPrepare(&SPID0, NULL, FRAME_BYTES);
+    spiSN32FlashDmaPrepare(&SPID0, &SPID1, FRAME_BYTES);
     SN_SPI1->CTRL0_b.FRESET = 0b11;                 // flash side (bare-metal, ours)
     // Command phase (SPI0 still 8-bit): panel window + flash READ+addr on SPI1.
     lcd_window(0, 0, FRAME_W - 1, FRAME_H - 1);
