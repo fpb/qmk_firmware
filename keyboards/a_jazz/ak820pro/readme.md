@@ -26,6 +26,7 @@ The following is supported by this port:
 - [x] Triple mode support (Use `Fn`+[`Q`|`W`|`E`] for Bluetooth and `Fn`+`R` for 2.4G dongle. Keep pressed for pairing.
 - [x] Per-key RGB Matrix (hardware PWM across CT16B0/B1/B2 — see `hardware_pwm.diff`)
 - [x] Play animations from flash memory
+- [x] Idle sleep: LCD + RGB blank after `DISPLAY_SLEEP_TIMEOUT_MS` (default 3 min) of no key/encoder input, or on a real USB bus-suspend; any input wakes them (a running animation resumes)
 - [x] Via support
 - [x] Support utility to flash assets to Flash memory and to set the clock
 
