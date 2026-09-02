@@ -11,6 +11,8 @@
 #include "bluetooth/ch582f_ajazz.h"
 #include "rtc/rtc.h"
 #include "raw_hid.h"
+#include "rgb_matrix.h"
+#include "usb_main.h"     // USB_DRIVER (USBD1), USB_SUSPENDED
 
 // Current wireless mode, derived from the tri-state slider. The Fn BT controls
 // are only meaningful in the matching mode (e.g. Fn+Q selects a BT slot only
@@ -457,6 +459,8 @@ static void update_leds(void) {
 
 __attribute__((weak)) void display_housekeeping_task(void) {}
 
+static void kb_sleep_task(void);   // idle-sleep (B-lite) + USB-suspend (A); below
+
 void housekeeping_task_kb(void) {
 
     // Throttle the housekeeping to 10 Hz
@@ -464,7 +468,19 @@ void housekeeping_task_kb(void) {
     if (timer_elapsed32(last_t) >= 100) {
         last_t = timer_read32();
 
+        kb_sleep_task();                  // idle-sleep (B-lite) + USB-suspend (A)
         update_leds();
+#ifdef AK_DEBUG_SUSPEND
+        // Diagnostic (uncommitted): expose the two decisive signals on the
+        // indicator LEDs so we can see, while the host sleeps, whether the bus
+        // actually suspends and whether the wired-host gate passes.
+        //   WinLock LED  (C15) = USB_DRIVER.state == USB_SUSPENDED
+        //   Charging LED (B18) = USB_DRIVER.state == USB_ACTIVE
+        // Normal wired use: Charging on, WinLock off. On host sleep, watch which
+        // (if either) changes -- tells us the real state the link drops to.
+        gpio_write_pin(LED_WINLOCK_PIN,  USB_DRIVER.state == USB_SUSPENDED);
+        gpio_write_pin(LED_CHARGING_PIN, USB_DRIVER.state == USB_ACTIVE);
+#endif
         if (!anim_active()) rtc_task();   // RTC I2C (port A) glitches the flash SPI1 pins (A12/A13) mid-DMA
         anim_task();                      // one animation frame per 100 ms
         display_housekeeping_task();
@@ -472,4 +488,40 @@ void housekeeping_task_kb(void) {
 
     // Chain the user hook
     housekeeping_task_user();
+}
+
+// --- Display/RGB sleep (B-lite idle timer + A USB-suspend) -------------------
+// Blank the LCD (panel sleep-in + backlight off) and the RGB matrix on two
+// triggers, whichever comes first, and restore on wake:
+//
+//   (A) a genuine USB bus suspend, gated on the wired host. We CANNOT use QMK's
+//       suspend_power_down_kb hooks -- the tmk suspend loop that calls them is
+//       compiled out by NO_USB_STARTUP_CHECK (set by BLUETOOTH_ENABLE), so we
+//       poll USB_DRIVER.state (kept current by usb_event_queue_task() off the
+//       SN32 BUS_SUSPEND/WAKEUP IRQs) ourselves. NOTE: many hosts (observed:
+//       macOS, AC and battery) keep the bus USB_ACTIVE through sleep and never
+//       fire this -- hence (B).
+//
+//   (B) inactivity: DISPLAY_SLEEP_TIMEOUT_MS with no key/encoder input, using
+//       QMK's own last_input_activity_elapsed() (covers keys and the encoder).
+//       The MCU keeps scanning, so the waking key still types; the display just
+//       relights one housekeeping tick later.
+static void kb_sleep_task(void) {
+    static bool asleep = false;
+
+    bool host_suspended = (connection_get_host() == CONNECTION_HOST_USB) &&
+                          (USB_DRIVER.state == USB_SUSPENDED);
+    bool idle = (DISPLAY_SLEEP_TIMEOUT_MS > 0) &&
+                (last_input_activity_elapsed() >= (uint32_t)DISPLAY_SLEEP_TIMEOUT_MS);
+    bool want_sleep = host_suspended || idle;
+
+    if (want_sleep && !asleep) {
+        asleep = true;
+        rgb_matrix_set_suspend_state(true);   // render effect 0 (all off)
+        display_enter_sleep();                // panel sleep-in + backlight off
+    } else if (!want_sleep && asleep) {
+        asleep = false;
+        rgb_matrix_set_suspend_state(false);
+        display_exit_sleep();                 // sleep-out + backlight on + repaint
+    }
 }

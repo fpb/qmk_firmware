@@ -209,6 +209,27 @@ void lcd_init(void) {
     send_seq(seq, sizeof(seq));
 }
 
+// Panel-controller power (separate from the backlight, which is display_set_power).
+// sleep=true drops the GC9107 to sleep-in (display off first), cutting its own
+// current; sleep=false brings it back (the 120 ms sleep-out wait the datasheet
+// requires before drawing, then display on). The driver must own SPI0 -- true after
+// lcd_init and between blits, which is where the sleep callers run.
+void lcd_panel_sleep(bool sleep) {
+    if (sleep) {
+        static const uint8_t seq[] = {
+            0x28, 20, 0,            // display off
+            0x10,  5, 0,            // sleep in
+        };
+        send_seq(seq, sizeof(seq));
+    } else {
+        static const uint8_t seq[] = {
+            0x11, 120, 0,           // sleep out (>=120 ms before any draw)
+            0x29,  20, 0,           // display on
+        };
+        send_seq(seq, sizeof(seq));
+    }
+}
+
 
 // ---------------------------------------------------------------------------
 // Flash-resident asset index (Stage D)

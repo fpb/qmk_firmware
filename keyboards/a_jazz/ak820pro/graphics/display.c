@@ -66,6 +66,33 @@ void display_toggle_power(void) {
     display_set_power(!display_powered);
 }
 
+// Low-power display state, shared by host-suspend (A) and, later, the idle-sleep
+// timer (B). Idempotent via s_slept so a spurious wake/enter is a no-op. Order on
+// enter: quiesce the bus (stop the player, let any blit finish), stop the repaint,
+// panel to sleep-in, backlight off. Exit reverses it and forces a full repaint.
+static bool s_slept = false;
+static bool s_anim_was_active = false;     // resume the animation on wake if it was playing
+
+void display_enter_sleep(void) {
+    if (s_slept) return;
+    s_slept = true;
+    s_anim_was_active = anim_active();
+    if (s_anim_was_active) anim_toggle();  // stop the player (restores SPI0 + repaint)
+    display_set_paused(true);              // stop the 10 Hz dashboard repaint
+    while (lcd_blit_busy()) { /* let any in-flight blit drain */ }
+    lcd_panel_sleep(true);                 // GC9107 display-off + sleep-in
+    display_set_power(false);              // backlight off (the big visible draw)
+}
+
+void display_exit_sleep(void) {
+    if (!s_slept) return;
+    s_slept = false;
+    lcd_panel_sleep(false);                // sleep-out (120 ms) + display-on
+    display_set_power(true);               // backlight on
+    if (s_anim_was_active) anim_toggle();  // resume the animation it was playing
+    else display_set_paused(false);        // otherwise unpause -> full dashboard repaint
+}
+
 static bool display_backlight_init(void) {
     gpio_set_pin_output(PANEL_BKL);
     gpio_write_pin(PANEL_BKL, display_powered); // initial state (on)

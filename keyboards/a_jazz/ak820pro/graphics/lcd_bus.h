@@ -15,6 +15,10 @@
 // Bring up the GC9107 panel (reset + init sequence + rotation 270).
 void lcd_init(void);
 
+// Panel-controller sleep-in/out (independent of the backlight). Used by the
+// display sleep primitive; the driver must own SPI0 when called.
+void lcd_panel_sleep(bool sleep);
+
 // Flash-animation player (interrupt-driven DMA; pauses the dashboard, borrows the bus).
 void anim_toggle(void);
 void anim_task(void);

@@ -81,6 +81,33 @@ void display_toggle_power(void) {
     display_set_power(!display_powered);
 }
 
+// Low-power display state (host-suspend + idle-sleep), the QP-backend twin of the
+// custom backend's display_enter/exit_sleep. Same primitive, but the panel is
+// blanked through QP (display-off opcode) instead of a raw sleep-in, since QP
+// owns SPI0; qp_power() brackets its own comms so this is safe while paused.
+// Idempotent via s_slept. anim_toggle() already drains any in-flight DMA frame.
+static bool s_slept = false;
+static bool s_anim_was_active = false;     // resume the animation on wake if it was playing
+
+void display_enter_sleep(void) {
+    if (s_slept) return;
+    s_slept = true;
+    s_anim_was_active = anim_active();
+    if (s_anim_was_active) anim_toggle();  // stop the player (drains in-flight frame)
+    display_set_paused(true);              // stop the 10 Hz dashboard repaint
+    qp_power(qp_display, false);           // GC9107 display-off (blank)
+    display_set_power(false);              // backlight off
+}
+
+void display_exit_sleep(void) {
+    if (!s_slept) return;
+    s_slept = false;
+    qp_power(qp_display, true);            // display-on
+    display_set_power(true);               // backlight on
+    if (s_anim_was_active) anim_toggle();  // resume the animation it was playing
+    else display_set_paused(false);        // otherwise unpause -> full dashboard repaint
+}
+
 static bool display_backlight_init(void) {
     gpio_set_pin_output(PANEL_BKL);
     gpio_write_pin(PANEL_BKL, display_powered); // initial state (on)

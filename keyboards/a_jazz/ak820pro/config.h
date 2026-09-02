@@ -25,6 +25,13 @@
 #define SN32F2XX_PWM_PFPA_CT16B1 0x0F00
 #define SN32F2XX_PWM_PFPA_CT16B2 0x0000
 
+// Let rgb_matrix_set_suspend_state() actually blank the matrix: without this the
+// whole function (including the suspend_state assignment) is #ifdef'd out, so the
+// idle-sleep call is a no-op and the effect keeps animating. With it, suspending
+// renders effect 0 and flushes the PWM buffers off once, and the task keeps it off
+// while suspended. The kb drives the state manually (see kb_sleep_task).
+#define RGB_MATRIX_SLEEP
+
 // The per-key LED map (81 LEDs; knob at matrix [0][14] has none) and
 // RGB_MATRIX_LED_COUNT are defined by the rgb_matrix "layout" in keyboard.json.
 
@@ -78,6 +85,14 @@
 
 #define DEBUG_MATRIX_SCAN_RATE
 #define DISPLAY_CLOCK_SHOW_SECONDS  FALSE
+
+// Idle sleep (B-lite): after this many ms with no key/encoder input, blank the
+// LCD (panel sleep-in + backlight off) and the RGB matrix; any input wakes them.
+// The MCU keeps scanning, so the waking key still types. 0 disables the timer
+// (a real USB bus-suspend still sleeps, on hosts that suspend -- see ak820pro.c).
+#ifndef DISPLAY_SLEEP_TIMEOUT_MS
+#    define DISPLAY_SLEEP_TIMEOUT_MS (3u * 60u * 1000u)
+#endif
 
 // Persist a small keyboard-specific config block in EEPROM. On SN32F290 QMK's
 // default "vendor" EEPROM driver is wear-leveling backed by MCU internal flash.
