@@ -25,6 +25,7 @@ The following is supported by this port:
     - battery charge level (%)
 - [x] Triple mode support (Use `Fn`+[`Q`|`W`|`E`] for Bluetooth and `Fn`+`R` for 2.4G dongle. Press `Fn`+`P` (1 second) to enter pairing mode)
 - [x] Per-key RGB Matrix (hardware PWM across CT16B0/B1/B2 — see `hardware_pwm.diff`)
+- [x] Idle sleep: LCD + RGB blank after `DISPLAY_SLEEP_TIMEOUT_MS` (default 3 min) of no key/encoder input, or on a real USB bus-suspend; any input wakes them
 
 Keyboard Maintainer: [fpb](https://github.com/fpb)
 

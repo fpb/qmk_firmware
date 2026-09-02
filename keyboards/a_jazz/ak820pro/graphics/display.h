@@ -12,6 +12,11 @@ void display_set_power(bool on);
 bool display_get_power(void);
 void display_toggle_power(void);
 
+// Enter/exit the low-power display state (panel display-off + backlight off,
+// redraw paused). Idempotent. Driven by the idle timer / USB-suspend poll.
+void display_enter_sleep(void);
+void display_exit_sleep(void);
+
 void display_draw_mac_logo(void);
 void display_draw_windows_logo(void);
 void display_draw_usb_logo(void);

@@ -10,6 +10,8 @@
 #include "bluetooth/ch582f_ajazz.h"
 #include "rtc/rtc.h"
 #include "raw_hid.h"
+#include "rgb_matrix.h"
+#include "usb_main.h"     // USB_DRIVER (USBD1), USB_SUSPENDED
 
 // Current wireless mode, derived from the tri-state slider. The Fn BT controls
 // are only meaningful in the matching mode (e.g. Fn+Q selects a BT slot only
@@ -302,6 +304,35 @@ static void update_leds(void) {
 
 __attribute__((weak)) void display_housekeeping_task(void) {}
 
+// Blank the LCD + RGB matrix on two triggers and restore on wake:
+//   (A) a genuine USB bus suspend (polled from USB_DRIVER.state -- the tmk
+//       suspend hooks are compiled out by NO_USB_STARTUP_CHECK, set by
+//       BLUETOOTH_ENABLE), gated on the wired host. Running macOS/Windows keep
+//       the bus USB_ACTIVE through sleep and never fire this; it only triggers
+//       when the host truly suspends (e.g. powered off with VBUS present).
+//   (B) inactivity: DISPLAY_SLEEP_TIMEOUT_MS with no key/encoder input, via
+//       QMK's last_input_activity_elapsed(). The MCU keeps scanning, so the
+//       waking key still types.
+static void kb_sleep_task(void) {
+    static bool asleep = false;
+
+    bool host_suspended = (connection_get_host() == CONNECTION_HOST_USB) &&
+                          (USB_DRIVER.state == USB_SUSPENDED);
+    bool idle = (DISPLAY_SLEEP_TIMEOUT_MS > 0) &&
+                (last_input_activity_elapsed() >= (uint32_t)DISPLAY_SLEEP_TIMEOUT_MS);
+    bool want_sleep = host_suspended || idle;
+
+    if (want_sleep && !asleep) {
+        asleep = true;
+        rgb_matrix_set_suspend_state(true);   // render effect 0 (all off)
+        display_enter_sleep();                // display-off + backlight off
+    } else if (!want_sleep && asleep) {
+        asleep = false;
+        rgb_matrix_set_suspend_state(false);
+        display_exit_sleep();                 // display-on + backlight on + repaint
+    }
+}
+
 void housekeeping_task_kb(void) {
 
     // Throttle the housekeeping to 10 Hz
@@ -309,6 +340,7 @@ void housekeeping_task_kb(void) {
     if (timer_elapsed32(last_t) >= 100) {
         last_t = timer_read32();
 
+        kb_sleep_task();                  // idle-sleep (B) + USB-suspend (A)
         update_leds();
         rtc_task();
         display_housekeeping_task();

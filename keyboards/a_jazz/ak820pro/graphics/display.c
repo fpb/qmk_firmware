@@ -44,6 +44,7 @@ static painter_image_handle_t qp_2_4g_logo;
 static bool display_powered = true;
 static bool splash_cleared = false;
 static bool mac_mode = false;
+static bool display_paused = false;   // true while asleep: skip the per-second redraw
 
 enum {
     CONN_MODE_WIRED = 0,
@@ -65,6 +66,30 @@ void display_set_power(bool on) {
 
 void display_toggle_power(void) {
     display_set_power(!display_powered);
+}
+
+// Low-power display state (idle-sleep / host-suspend). No animation on this
+// backend, so just stop the per-second dashboard redraw, blank the panel via QP
+// (display-off) and cut the backlight; wake reverses it and forces a full
+// repaint. Idempotent via s_slept. Driven by kb_sleep_task in ak820pro.c.
+uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg);   // defined below
+static bool s_slept = false;
+
+void display_enter_sleep(void) {
+    if (s_slept) return;
+    s_slept = true;
+    display_paused = true;                 // stop the housekeeping clock redraw
+    qp_power(qp_display, false);           // GC9107 display-off (blank)
+    display_set_power(false);              // backlight off
+}
+
+void display_exit_sleep(void) {
+    if (!s_slept) return;
+    s_slept = false;
+    qp_power(qp_display, true);            // display-on
+    display_set_power(true);               // backlight on
+    display_paused = false;
+    display_redraw_dashboard(0, NULL);     // full repaint
 }
 
 static bool display_backlight_init(void) {
@@ -294,6 +319,8 @@ static void draw_status(bool force) {
 }
 
 void display_housekeeping_task(void) {
+    if (display_paused) return;   // asleep: no redraw (panel is off)
+
     // Call the user-defined housekeeping task first. If it returns false, skip the default housekeeping.
     if(!display_housekeeping_task_user())
         return;
