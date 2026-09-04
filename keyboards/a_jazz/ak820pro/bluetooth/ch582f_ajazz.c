@@ -103,7 +103,36 @@ static bool ch582_kbd_output_active(void) {
     return connect_requested && is_module_connected;
 }
 
+/* Service the CH582 link once: pump the reliable TX queue and process any
+ * available RX (ACK -> release in-flight frame, connection state, battery).
+ * Factored out of ch582_task() so the keyboard send path can also drain the
+ * queue mid-burst (see the backpressure in ch582_send_keyboard_report). */
+static void ch582_service(void);
+/* True when the reliable TX queue has no free slot. */
+static bool ch582_txq_full(void);
+
+/* Max time to spend draining the TX queue for a single keyboard report before
+ * giving up (and dropping, as before). Only reached on a stalled link; a healthy
+ * link frees a slot in ~1-2 ms. */
+#ifndef CH582_TX_BACKPRESSURE_MS
+#    define CH582_TX_BACKPRESSURE_MS 50
+#endif
+
 void ch582_send_keyboard_report(report_keyboard_t *report) {
+    /* Backpressure: a VIA macro / fast burst enqueues key reports far faster than
+     * the ACK-gated BT link drains, and ch582_task() cannot run mid-macro (macro
+     * playback blocks the main loop), so the fixed-depth queue would overflow and
+     * silently drop the tail. While the link is up, service it here until a slot
+     * frees, so the burst paces to the link instead of losing frames. Bounded, so a
+     * stalled/absent link degrades to the old drop-on-full behaviour rather than
+     * wedging the keyboard. */
+    if (is_module_connected) {
+        uint16_t start = timer_read();
+        while (ch582_txq_full() && timer_elapsed(start) < CH582_TX_BACKPRESSURE_MS) {
+            ch582_service();
+        }
+    }
+
     /* Boot keyboard report = [mods][reserved][key1..key6]; this matches the
      * stock A1 frame byte-for-byte. report->keys is the 6KRO slot array, valid
      * regardless of NKRO (it is the first member of the report union). */
@@ -202,6 +231,8 @@ static uint16_t         tx_sent_time = 0;
 static uint8_t          tx_retries   = 0;
 
 static inline uint8_t tx_next(uint8_t i) { return (uint8_t)((i + 1) % CH582_TXQ_LEN); }
+
+static bool ch582_txq_full(void) { return tx_next(tx_tail) == tx_head; }
 
 /* Drop the head frame (ACKed or given up) and stop waiting on it. */
 static void ch582_tx_pop(void) {
@@ -352,56 +383,29 @@ uint8_t ch582_get_target_slot(void) {
     return profile_to_slot(requested_profile);
 }
 
-void ch582_task(void) {
-    /* Rolling 3-byte window over the RX stream. The module interleaves two frame
-     * formats with no length prefix, and the stream can drop bytes on a burst, so
-     * a fixed [type,data,cksum] state machine desyncs permanently. Matching on a
-     * sliding window instead self-resynchronises and tolerates dropped bytes.
-     *
-     * Logic-analyzer-decoded against stock firmware. The ONLY trustworthy
-     * connection signals are the 5B state transitions; everything else (61 0D 0A,
-     * 5C battery, 5B 23) is periodic and streams regardless of link state:
-     *   - 61 0D 0A   -> "a\r\n" periodic IDLE HEARTBEAT (NOT a disconnect: it is
-     *                   emitted while connected too). Ignore for connection state.
-     *   - 5A <led>   -> host keyboard LED bitmap (USB LED bits; bit1 = caps lock)
-     *   - 5B <code>  -> connection state machine (code is a STATE, not a slot):
-     *        32 = link established (connected);  31 = advertising/pairing;
-     *        33/34 = connect ATTEMPT (link down, retrying);  23 = idle (ignore,
-     *        it appears both connected and disconnected).
-     *   - 5C <pct>   -> battery percent in decimal (0x64=100). PERIODIC and link-
-     *                   independent (streams even while disconnected) -> never use
-     *                   it as a "connected" signal. */
-    static uint8_t b2 = 0, b1 = 0, b0 = 0;
+/* Rolling 3-byte window over the RX stream, shared by ch582_service() across
+ * calls (ch582_task and the send-path backpressure both drive it). The module
+ * interleaves two frame formats with no length prefix, and the stream can drop
+ * bytes on a burst, so a fixed [type,data,cksum] state machine desyncs
+ * permanently. Matching on a sliding window self-resynchronises and tolerates
+ * dropped bytes.
+ *
+ * Logic-analyzer-decoded against stock firmware. The ONLY trustworthy connection
+ * signals are the 5B state transitions; everything else (61 0D 0A, 5C battery,
+ * 5B 23) is periodic and streams regardless of link state:
+ *   - 61 0D 0A   -> "a\r\n" periodic IDLE HEARTBEAT (NOT a disconnect: it is
+ *                   emitted while connected too). Ignore for connection state.
+ *   - 5A <led>   -> host keyboard LED bitmap (USB LED bits; bit1 = caps lock)
+ *   - 5B <code>  -> connection state machine (code is a STATE, not a slot):
+ *        32 = link established (connected);  31 = advertising/pairing;
+ *        33/34 = connect ATTEMPT (link down, retrying);  23 = idle (ignore,
+ *        it appears both connected and disconnected).
+ *   - 5C <pct>   -> battery percent in decimal (0x64=100). PERIODIC and link-
+ *                   independent (streams even while disconnected) -> never use
+ *                   it as a "connected" signal. */
+static uint8_t b2 = 0, b1 = 0, b0 = 0;
 
-    /* Cold-boot-only select retry. The mode slider is wired directly to the
-     * CH582F, so once the module is up it handles advertising/reconnect itself
-     * (like the @isuua/edthu reference, which sends the select ONCE per switch).
-     * We must NOT keep re-issuing the select on a live module: re-selecting
-     * restarts its advertising and starves slow reconnects -- a phone reconnects
-     * in <500 ms and beats the retry, but macOS directed-advertising takes longer
-     * and never completes, so it needed a manual pairing entry. The only case
-     * that genuinely needs a retry is cold boot, where the boot-time select fires
-     * before the CH582F's UART is up and is dropped. So retry ONLY until the
-     * module is alive (has ACKed anything), then stop and let it reconnect at its
-     * own pace. Transient (non-boot) select drops are covered by the ACK/retry
-     * queue instead. */
-    if (connect_requested && !module_alive &&
-        timer_elapsed(last_attempt_time) >= CH582_CONNECT_RETRY_MS) {
-        last_attempt_time = timer_read();
-        uint8_t param = requested_profile;
-        ch582_send_command(0xA6, &param, 1);
-    }
-
-    /* Periodically poll the module for battery level. The module only emits 5C
-     * battery frames in response to an A6 53 request (the stock firmware polls the
-     * same way). Poll regardless of connection mode: the gauge is valid in BT,
-     * 2.4G and USB-charging states, and A6 53 is a status query that doesn't touch
-     * the link. */
-    if (timer_elapsed(last_battery_poll) >= CH582_BATTERY_POLL_MS) {
-        last_battery_poll = timer_read();
-        ch582_poll_status();
-    }
-
+static void ch582_service(void) {
     /* Drive the reliable TX queue: send/retransmit/drop the in-flight frame. */
     ch582_tx_pump();
 
@@ -494,4 +498,39 @@ void ch582_task(void) {
             b2 = b1 = b0 = 0;
         }
     }
+}
+
+void ch582_task(void) {
+    /* Cold-boot-only select retry. The mode slider is wired directly to the
+     * CH582F, so once the module is up it handles advertising/reconnect itself
+     * (like the @isuua/edthu reference, which sends the select ONCE per switch).
+     * We must NOT keep re-issuing the select on a live module: re-selecting
+     * restarts its advertising and starves slow reconnects -- a phone reconnects
+     * in <500 ms and beats the retry, but macOS directed-advertising takes longer
+     * and never completes, so it needed a manual pairing entry. The only case
+     * that genuinely needs a retry is cold boot, where the boot-time select fires
+     * before the CH582F's UART is up and is dropped. So retry ONLY until the
+     * module is alive (has ACKed anything), then stop and let it reconnect at its
+     * own pace. Transient (non-boot) select drops are covered by the ACK/retry
+     * queue instead. */
+    if (connect_requested && !module_alive &&
+        timer_elapsed(last_attempt_time) >= CH582_CONNECT_RETRY_MS) {
+        last_attempt_time = timer_read();
+        uint8_t param = requested_profile;
+        ch582_send_command(0xA6, &param, 1);
+    }
+
+    /* Periodically poll the module for battery level. The module only emits 5C
+     * battery frames in response to an A6 53 request (the stock firmware polls the
+     * same way). Poll regardless of connection mode: the gauge is valid in BT,
+     * 2.4G and USB-charging states, and A6 53 is a status query that doesn't touch
+     * the link. */
+    if (timer_elapsed(last_battery_poll) >= CH582_BATTERY_POLL_MS) {
+        last_battery_poll = timer_read();
+        ch582_poll_status();
+    }
+
+    /* Pump the TX queue and drain RX (ACKs, connection state, battery). Same
+     * routine the send-path backpressure calls to keep the queue moving mid-burst. */
+    ch582_service();
 }
