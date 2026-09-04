@@ -75,13 +75,15 @@
 #define CHARGE_STDBY_PIN  B17
 
 
-// Idle thread sleeps on WFI (lower idle current). Safe here only because
-// efl_ramtext.diff makes the SN32 EFL flash program/erase run from SRAM: with
-// the flash routines in flash, a VIA/eeconfig flash write stalls instruction/
-// vector fetch long enough that the SPI0 DMA completion IRQ is missed and the
-// WFI-idle wakeup is lost -> hang. RAM-resident flash ops keep IRQs serviced.
-// (If you drop efl_ramtext.diff, set this back to FALSE.)
-#define CORTEX_ENABLE_WFI_IDLE TRUE
+// Idle thread does NOT sleep on WFI. WFI-idle (lower idle current) was tried, made
+// "safe" by efl_ramtext.diff (EFL flash program/erase run from SRAM so a VIA/eeconfig
+// write can't stall the vector fetch and drop the WFI wakeup) -- but it proved
+// silicon/unit-dependent: on some units the WFI wakeup is still lost during boot and
+// the keyboard hangs before it enumerates (matrix + panel + flash all through SPI/DMA
+// IRQs). FALSE is robust across units (matches the embedded branch, which never hit
+// this). The idle-current it forgoes is negligible next to the LCD backlight + RGB,
+// which the idle-sleep feature already blanks after DISPLAY_SLEEP_TIMEOUT_MS.
+#define CORTEX_ENABLE_WFI_IDLE FALSE
 
 #define DEBUG_MATRIX_SCAN_RATE
 #define DISPLAY_CLOCK_SHOW_SECONDS  FALSE
