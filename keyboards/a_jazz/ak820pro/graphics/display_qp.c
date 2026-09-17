@@ -391,11 +391,15 @@ static void draw_np_progress(bool force) {
     uint16_t fw = dur ? (uint16_t)((uint32_t)(GX1 - GX0) * el / dur) : 0;
     if (fw > (GX1 - GX0)) fw = GX1 - GX0;
     if (!force && fw == last_fw) return;
+    // Fill: accent blue when playing, neutral grey when paused.
+    uint8_t ph = media_playing() ? 150 : 0;
+    uint8_t ps = media_playing() ? 255 : 0;
+    uint8_t pv = media_playing() ? 255 : 140;
     if (force || fw < last_fw) {
         qp_rect(qp_display, GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H - 1, NP_TRACK, true);
-        if (fw) qp_rect(qp_display, GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H - 1, NP_PROG, true);
+        if (fw) qp_rect(qp_display, GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H - 1, ph, ps, pv, true);
     } else {
-        qp_rect(qp_display, GX0 + last_fw, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H - 1, NP_PROG, true);
+        qp_rect(qp_display, GX0 + last_fw, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H - 1, ph, ps, pv, true);
     }
     last_fw = fw;
 }

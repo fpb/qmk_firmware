@@ -292,7 +292,8 @@ static void draw_conn_number(bool force) {
 
 #define COL_TRACK 0x2965             // dark grey (gauge/progress track)
 #define COL_BATT  0x66EF             // green (battery fill)
-#define COL_PROG  0x565F             // accent blue (progress fill)
+#define COL_PROG  0x565F             // accent blue (progress fill, playing)
+#define COL_PAUSE 0x8C71             // neutral grey (progress fill, paused)
 
 // Full-width battery meter; repaints only on a level change (or force).
 static void draw_battery_gauge(bool force) {
@@ -361,11 +362,12 @@ static void draw_np_progress(bool force) {
     uint16_t fw = dur ? (uint16_t)((uint32_t)(GX1 - GX0) * el / dur) : 0;
     if (fw > (GX1 - GX0)) fw = GX1 - GX0;
     if (!force && fw == last_fw) return;                 // no visible change this tick
-    if (force || fw < last_fw) {                         // full bar (first paint / seek back)
+    uint16_t col = media_playing() ? COL_PROG : COL_PAUSE;   // blue playing, grey paused
+    if (force || fw < last_fw) {                         // full bar (first paint / seek / play-pause)
         lcd_fill_rect(GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H, COL_TRACK);
-        if (fw) lcd_fill_rect(GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, COL_PROG);
+        if (fw) lcd_fill_rect(GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, col);
     } else {                                             // just extend the fill
-        lcd_fill_rect(GX0 + last_fw, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, COL_PROG);
+        lcd_fill_rect(GX0 + last_fw, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, col);
     }
     last_fw = fw;
 }
