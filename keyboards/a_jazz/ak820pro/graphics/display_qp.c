@@ -378,6 +378,11 @@ static bool nowplaying_view(void) { return media_show() && !s_force_clock; }
 void display_toggle_media(void) {
     s_force_clock = !s_force_clock;
     clock_force_repaint = true;
+    // Never drive the panel while the animation player owns the bus: it has a
+    // frame blit in flight and a concurrent redraw hangs the board. The flag flip
+    // persists; when the player stops, display_set_paused(false) repaints in the
+    // now-current view. (The media view isn't visible under the animation anyway.)
+    if (display_paused) return;
     display_redraw_dashboard(0, NULL);
 }
 
