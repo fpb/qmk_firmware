@@ -352,13 +352,22 @@ static void fit_line(const char *s, char out[NP_CHARS + 1]) {
     if (s[n]) { if (n > NP_CHARS - 3) n = NP_CHARS - 3; out[n] = 0; strcat(out, "..."); }
 }
 
-// Progress bar only -- cheap, redrawn once/second as elapsed self-advances.
-static void draw_np_progress(void) {
+// Progress bar. Time only moves forward, so a tick just extends the fill by the
+// newly-covered strip [last_fw, fw) -- no clearing or full redraw. force (or a
+// backward jump / new track) repaints the whole track+fill once.
+static void draw_np_progress(bool force) {
+    static uint16_t last_fw = 0xFFFF;
     uint32_t dur = media_duration_ms(), el = media_elapsed_ms();
-    lcd_fill_rect(GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H, COL_TRACK);
     uint16_t fw = dur ? (uint16_t)((uint32_t)(GX1 - GX0) * el / dur) : 0;
     if (fw > (GX1 - GX0)) fw = GX1 - GX0;
-    if (fw) lcd_fill_rect(GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, COL_PROG);
+    if (!force && fw == last_fw) return;                 // no visible change this tick
+    if (force || fw < last_fw) {                         // full bar (first paint / seek back)
+        lcd_fill_rect(GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H, COL_TRACK);
+        if (fw) lcd_fill_rect(GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, COL_PROG);
+    } else {                                             // just extend the fill
+        lcd_fill_rect(GX0 + last_fw, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, COL_PROG);
+    }
+    last_fw = fw;
 }
 
 // Full now-playing block: title (2 wrapped lines) + artist + progress. Repaints
@@ -376,7 +385,7 @@ static void draw_nowplaying(bool force) {
     fit_line(media_artist(), art);
     if (art[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_ARTIST_Y, art);   // white (flash tiles can't dim)
 
-    draw_np_progress();
+    draw_np_progress(true);   // full bar over the freshly-cleared zone
 }
 
 // View selection: now-playing when media is active and not force-cleared.
@@ -424,8 +433,8 @@ void display_housekeeping_task(void) {
         last_sec = sec;
         draw_date(false);
         draw_battery_gauge(false);
-        if (view) draw_np_progress();   // progress bar advances
-        else      draw_clock_time();    // clock ticks
+        if (view) draw_np_progress(false);   // extend the fill by the new strip only
+        else      draw_clock_time();         // clock ticks
     }
 }
 
