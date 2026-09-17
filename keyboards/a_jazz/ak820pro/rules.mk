@@ -56,6 +56,8 @@ SRC += bluetooth/ch582f_ajazz.c
 
 SRC += graphics/flash_io.c
 SRC += rtc/rtc.c
+SRC += media/media.c
 VPATH += bluetooth
 VPATH += graphics
 VPATH += rtc
+VPATH += media

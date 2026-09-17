@@ -10,6 +10,7 @@
 #include "graphics/lcd_bus.h"
 #include "bluetooth/ch582f_ajazz.h"
 #include "rtc/rtc.h"
+#include "media/media.h"
 #include "raw_hid.h"
 #include "rgb_matrix.h"
 #include "usb_main.h"     // USB_DRIVER (USBD1), USB_SUSPENDED
@@ -429,6 +430,8 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
         rtc_apply_bytes(&data[3]);
     } else if (is_flash_cmd(data, length)) {
         flash_command(data, length);
+    } else if (length >= 2 && data[0] == RTC_SET_VALUE && data[1] == MEDIA_CHANNEL) {
+        media_hid_command(data, length);   // now-playing state (channel 0x12)
     } else {
         data[0] = RTC_UNHANDLED;
     }
