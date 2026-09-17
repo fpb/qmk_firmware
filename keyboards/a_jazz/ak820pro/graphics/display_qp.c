@@ -373,7 +373,7 @@ static void draw_nowplaying(bool force) {
 
 // View selection + force-clock toggle (SCR_MEDIA).
 static bool s_force_clock = false;
-static bool nowplaying_view(void) { return media_active() && !s_force_clock; }
+static bool nowplaying_view(void) { return media_show() && !s_force_clock; }
 
 void display_toggle_media(void) {
     s_force_clock = !s_force_clock;

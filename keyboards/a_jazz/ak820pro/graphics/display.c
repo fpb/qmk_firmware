@@ -341,7 +341,7 @@ static void draw_nowplaying(bool force) {
 
 // View selection: now-playing when media is active and not force-cleared.
 static bool s_force_clock = false;
-static bool nowplaying_view(void) { return media_active() && !s_force_clock; }
+static bool nowplaying_view(void) { return media_show() && !s_force_clock; }
 
 // Keycode hook: toggle "force the clock" while media is playing.
 void display_toggle_media(void) {
