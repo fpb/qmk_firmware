@@ -46,5 +46,26 @@
 #undef SN32_PWM_USE_CT16B2
 #define SN32_PWM_USE_CT16B2 TRUE
 
+// Interrupt priority ordering (Cortex-M0: lower number = MORE urgent; usable
+// band is 1..3, 0 is reserved for PendSV/kernel). The ChibiOS/SN32 defaults are
+// inverted for this board: UART2 (the CH582F link) defaults to 3 and the RGB
+// row-scan PWM to 2, so the frequent, long PWM ISR preempts UART byte servicing.
+// Measured symptoms of the default: outbound ACK timeouts / TX-queue overflow /
+// dropped keystrokes, and inbound dropped "5B 32" frames (the connection-digit
+// blink bug) -- both the same root cause. The CH582 link is the only peripheral
+// where being late loses data, so it must be the most urgent.
+//   1  UART2 (CH582F link)  -- late = lost data
+//   3  PWM CT16B0/1/2       -- long+frequent, but us of jitter is invisible on an LED
+// (No GPT entry: this fork uses hardware PWM for the matrix and does not compile
+// the GPT driver; the software-PWM/GPT-tick backlight is a different fork.)
+#undef SN32_SERIAL_UART2_PRIORITY
+#define SN32_SERIAL_UART2_PRIORITY 1
+#undef SN32_PWM_CT16B0_IRQ_PRIORITY
+#define SN32_PWM_CT16B0_IRQ_PRIORITY 3
+#undef SN32_PWM_CT16B1_IRQ_PRIORITY
+#define SN32_PWM_CT16B1_IRQ_PRIORITY 3
+#undef SN32_PWM_CT16B2_IRQ_PRIORITY
+#define SN32_PWM_CT16B2_IRQ_PRIORITY 3
+
 
 
