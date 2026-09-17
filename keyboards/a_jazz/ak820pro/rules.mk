@@ -27,7 +27,10 @@ SRC += graphics/res/bluetooth_icon_24x24.qgf.c
 SRC += graphics/res/2_4_g_icon_24x24.qgf.c
 
 SRC += graphics/display.c
+SRC += graphics/nowplaying.c
 SRC += rtc/rtc.c
+SRC += media/media.c
 VPATH += bluetooth
 VPATH += graphics
 VPATH += rtc
+VPATH += media

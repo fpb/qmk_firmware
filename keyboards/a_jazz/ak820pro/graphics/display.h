@@ -12,6 +12,9 @@ void display_set_power(bool on);
 bool display_get_power(void);
 void display_toggle_power(void);
 
+// Toggle "force the clock" while media is playing (now-playing auto-shows on play).
+void display_toggle_media(void);
+
 // Enter/exit the low-power display state (panel display-off + backlight off,
 // redraw paused). Idempotent. Driven by the idle timer / USB-suspend poll.
 void display_enter_sleep(void);

@@ -9,6 +9,7 @@
 #include "graphics/display.h"
 #include "bluetooth/ch582f_ajazz.h"
 #include "rtc/rtc.h"
+#include "media/media.h"
 #include "raw_hid.h"
 #include "rgb_matrix.h"
 #include "usb_main.h"     // USB_DRIVER (USBD1), USB_SUSPENDED
@@ -157,6 +158,9 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         case SCR_TOG:
             if (record->event.pressed) display_toggle_power();
             return false;
+        case SCR_MEDIA:
+            if (record->event.pressed) display_toggle_media();
+            return false;
 #ifdef RGB_MATRIX_ENABLE
         // VIA-assignable RGB-matrix controls (see ak820pro.h). One step per press.
         case RGBM_TOG:  if (record->event.pressed) rgb_matrix_toggle();         return false;
@@ -266,6 +270,10 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
         rtc_apply_bytes(&data[3]); // leave data[0] = SET_VALUE -> "handled"
         return;
     }
+    if (length >= 2 && data[0] == RTC_SET_VALUE && data[1] == MEDIA_CHANNEL) {
+        media_hid_command(data, length);   // now-playing state (channel 0x12)
+        return;
+    }
     data[0] = RTC_UNHANDLED;
 }
 
@@ -274,6 +282,8 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
 void raw_hid_receive(uint8_t *data, uint8_t length) {
     if (rtc_is_set_time_cmd(data, length)) {
         rtc_apply_bytes(&data[3]);
+    } else if (length >= 2 && data[0] == RTC_SET_VALUE && data[1] == MEDIA_CHANNEL) {
+        media_hid_command(data, length);   // now-playing state (channel 0x12)
     } else {
         data[0] = RTC_UNHANDLED;
     }
