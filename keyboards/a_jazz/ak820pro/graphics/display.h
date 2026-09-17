@@ -13,6 +13,10 @@ void display_set_power(bool on);
 bool display_get_power(void);
 void display_toggle_power(void);
 
+// Toggle "force the clock" while media is playing (now-playing auto-shows on
+// play; this key overrides back to the clock and back). See media/media.h.
+void display_toggle_media(void);
+
 // Enter/exit the low-power display state (panel sleep-in + backlight off, repaint
 // paused). Idempotent. Driven by host-suspend now; reused by the idle-sleep timer.
 void display_enter_sleep(void);

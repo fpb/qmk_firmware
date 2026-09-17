@@ -163,6 +163,9 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         case ANIM_TOG:
             if (record->event.pressed) anim_toggle();
             return false;
+        case SCR_MEDIA:
+            if (record->event.pressed) display_toggle_media();
+            return false;
 #ifdef RGB_MATRIX_ENABLE
         // VIA-assignable RGB-matrix controls (see ak820pro.h). One step per press.
         case RGBM_TOG:  if (record->event.pressed) rgb_matrix_toggle();         return false;

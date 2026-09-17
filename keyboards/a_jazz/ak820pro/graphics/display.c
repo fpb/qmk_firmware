@@ -12,6 +12,7 @@
 #include "quantum.h"
 #include "gpio.h"
 #include "rtc/rtc.h"
+#include "media/media.h"
 
 
 
@@ -110,17 +111,32 @@ static bool display_backlight_init(void) {
 // Forces a full clock+date repaint after the background is cleared.
 static bool clock_force_repaint = true;
 
-static void draw_status(bool force); // CH582F status: battery + channel digit
+static void draw_status(bool force);       // connection digit + battery gauge
+static bool nowplaying_view(void);         // media active and not force-cleared
+static void draw_nowplaying(bool force);   // now-playing block (below the gauge)
 
-void draw_clock(void) {
+// Date DD/MM, top-right of the status line -- shown in BOTH the clock and the
+// now-playing view. Repaints on a forced full paint or when the date changes.
+static void draw_date(bool force) {
+    rtc_time_t shown;
+    if (!rtc_get_time(&shown)) return;
+    static uint8_t drawn_day = 0xFF, drawn_month = 0xFF;
+    if (!force && shown.day == drawn_day && shown.month == drawn_month) return;
+    drawn_day = shown.day; drawn_month = shown.month;
+    char date_str[8];
+    snprintf(date_str, sizeof(date_str), "%02u/%02u", (unsigned)shown.day, (unsigned)shown.month);
+    uint16_t w = lcd_flash_text_width(FONT_STATUS, date_str);   // fixed DD/MM width -> overwrites cleanly
+    lcd_draw_flash_text(FONT_STATUS, PANEL_WIDTH - 1 - w, 2, date_str);
+}
+
+// Big HH:MM(:SS) clock, drawn only in the clock view. Per-cell diff so a normal
+// tick repaints just the seconds.
+static void draw_clock_time(void) {
     rtc_time_t shown;
     bool valid = rtc_get_time(&shown);
     if (!valid) memset(&shown, 0, sizeof(shown));
-
-    // Time HH:MM:SS -- redraw only the character cells that changed (usually just the
-    // seconds). The clock font is monospace, so every cell has the same width.
     static char last_time[12] = {0};
-    if (clock_force_repaint) memset(last_time, 0, sizeof(last_time)); // invalidate -> full repaint
+    if (clock_force_repaint) memset(last_time, 0, sizeof(last_time));
     char time_str[12];
 #if DISPLAY_CLOCK_SHOW_SECONDS
     snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
@@ -130,32 +146,19 @@ void draw_clock(void) {
              (unsigned)shown.hours, (unsigned)shown.minutes);
 #endif
     if (strcmp(time_str, last_time) != 0) {
-        uint8_t  n       = (uint8_t)strlen(time_str);        // 8 (HH:MM:SS) or 5 (HH:MM)
+        uint8_t  n       = (uint8_t)strlen(time_str);
         uint16_t total_w = lcd_flash_text_width(FONT_CLOCK, time_str);
         int16_t  x0      = (PANEL_WIDTH - total_w) / 2;
-        int16_t  cw      = total_w / n;                      // monospace cell width
+        int16_t  cw      = total_w / n;
         for (uint8_t i = 0; i < n; i++) {
             if (time_str[i] != last_time[i]) {
-                int16_t cx = x0 + i * cw;
                 char ch[2] = {time_str[i], 0};
-                lcd_draw_flash_text(FONT_CLOCK, cx, CLOCK_Y, ch);
+                lcd_draw_flash_text(FONT_CLOCK, x0 + i * cw, CLOCK_Y, ch);
             }
         }
         strcpy(last_time, time_str);
     }
-    // Date DD/MM, top-right. Repainted on a forced full paint or when it changes.
-    static uint8_t drawn_day = 0, drawn_month = 0;
-    if (valid && (clock_force_repaint || shown.day != drawn_day || shown.month != drawn_month)) {
-        drawn_day   = shown.day;
-        drawn_month = shown.month;
-        char date_str[8];
-        snprintf(date_str, sizeof(date_str), "%02u/%02u",
-                 (unsigned)shown.day, (unsigned)shown.month);
-        uint16_t w = lcd_flash_text_width(FONT_STATUS, date_str);
-        lcd_draw_flash_text(FONT_STATUS, PANEL_WIDTH - 1 - w, 2, date_str);
-    }
-
-    clock_force_repaint = false; // consumed by both the time and date above
+    clock_force_repaint = false;
 }
 
 uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
@@ -175,8 +178,10 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
     else if (connection_mode == CONN_MODE_BLUETOOTH) lcd_draw_flash_image(ASSET_BLUETOOTH_ICON_24X24, 32, 0);
     else if (connection_mode == CONN_MODE_2_4G)      lcd_draw_flash_image(ASSET_2_4_G_ICON_24X24, 32, 0);
 
-    draw_clock();
-    draw_status(true);   // battery + channel digit over the cleared screen
+    draw_date(true);              // date on the status line (both views)
+    draw_status(true);           // connection digit + battery gauge
+    if (nowplaying_view()) draw_nowplaying(true);
+    else                   draw_clock_time();
 
     return 0; // one-shot
 }
@@ -269,27 +274,125 @@ static void draw_conn_number(bool force) {
     }
 }
 
-// Bottom row: the CH582F battery level (right-aligned).
-static void draw_battery(bool force) {
-    static uint8_t last_batt = 0xFE;
-    uint8_t batt = ch582_get_battery();
-    if (!force && batt == last_batt) return;
-    last_batt = batt;
+// --- battery gauge + now-playing zone ---------------------------------------
+// The battery is now a full-width horizontal gauge just below the status line
+// (replacing the old bottom "NN%" text), shown in BOTH the clock and now-playing
+// views. Below it, the "zone" holds the clock OR the now-playing block.
+#define GAUGE_Y   27
+#define GAUGE_H   6
+#define GX0       2
+#define GX1       126
+#define ZONE_Y0   36                 // top of the swappable content zone
+#define NP_TITLE_Y1 40
+#define NP_TITLE_Y2 64
+#define NP_ARTIST_Y 90
+#define NP_BAR_Y    118
+#define NP_BAR_H    6
+#define NP_CHARS    12               // Iosevka-Medium-20 chars per 128px line
 
-    // Clear the bottom strip.
-    lcd_clear_rect(0, STATUS_Y, PANEL_WIDTH, PANEL_HEIGHT - STATUS_Y);
+#define COL_TRACK 0x2965             // dark grey (gauge/progress track)
+#define COL_BATT  0x66EF             // green (battery fill)
+#define COL_PROG  0x565F             // accent blue (progress fill)
 
-    if (batt <= 100) {
-        char bbuf[8];
-        snprintf(bbuf, sizeof(bbuf), "%u%%", batt);
-        uint16_t w = lcd_flash_text_width(FONT_STATUS, bbuf);
-        lcd_draw_flash_text(FONT_STATUS, PANEL_WIDTH - 1 - w, STATUS_Y, bbuf);
+// Full-width battery meter; repaints only on a level change (or force).
+static void draw_battery_gauge(bool force) {
+    static uint8_t last = 0xFE;
+    uint8_t b = ch582_get_battery();
+    if (b > 100) b = 0;
+    if (!force && b == last) return;
+    last = b;
+    lcd_fill_rect(GX0, GAUGE_Y, GX1, GAUGE_Y + GAUGE_H, COL_TRACK);
+    uint16_t fw = (uint16_t)((uint32_t)(GX1 - GX0) * b / 100u);
+    if (fw) lcd_fill_rect(GX0, GAUGE_Y, GX0 + fw, GAUGE_Y + GAUGE_H, COL_BATT);
+}
+
+// Greedy word-wrap into two <=NP_CHARS lines; "..." on the last line if truncated.
+static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 1]) {
+    char *out[2] = { l1, l2 };
+    out[0][0] = out[1][0] = 0;
+    uint8_t li = 0;
+    const char *p = s;
+    bool overflow = false;
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        const char *w = p;
+        while (*p && *p != ' ') p++;
+        uint8_t wl = (uint8_t)(p - w);
+        uint8_t cl = (uint8_t)strlen(out[li]);
+        uint8_t need = cl ? (uint8_t)(cl + 1 + wl) : wl;
+        if (need <= NP_CHARS) {
+            if (cl) { out[li][cl] = ' '; cl++; }
+            memcpy(out[li] + cl, w, wl); out[li][cl + wl] = 0;
+        } else if (cl == 0) {                 // word alone longer than a line
+            memcpy(out[li], w, NP_CHARS); out[li][NP_CHARS] = 0;
+            overflow = true; break;
+        } else if (li == 0) {                 // wrap to line 2
+            li = 1;
+            uint8_t n = wl < NP_CHARS ? wl : NP_CHARS;
+            memcpy(out[1], w, n); out[1][n] = 0;
+        } else {
+            overflow = true; break;           // would need a 3rd line
+        }
     }
+    while (*p == ' ') p++;
+    if (overflow || *p) {                     // truncated -> ellipsis on the last line
+        char *L = out[1][0] ? l2 : l1;
+        uint8_t n = (uint8_t)strlen(L);
+        if (n > NP_CHARS - 3) n = NP_CHARS - 3;
+        L[n] = 0; strcat(L, "...");
+    }
+}
+
+// One line of at most NP_CHARS, ellipsised if longer (for the artist).
+static void fit_line(const char *s, char out[NP_CHARS + 1]) {
+    uint8_t n = 0;
+    while (s[n] && n < NP_CHARS) { out[n] = s[n]; n++; }
+    out[n] = 0;
+    if (s[n]) { if (n > NP_CHARS - 3) n = NP_CHARS - 3; out[n] = 0; strcat(out, "..."); }
+}
+
+// Progress bar only -- cheap, redrawn once/second as elapsed self-advances.
+static void draw_np_progress(void) {
+    uint32_t dur = media_duration_ms(), el = media_elapsed_ms();
+    lcd_fill_rect(GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H, COL_TRACK);
+    uint16_t fw = dur ? (uint16_t)((uint32_t)(GX1 - GX0) * el / dur) : 0;
+    if (fw > (GX1 - GX0)) fw = GX1 - GX0;
+    if (fw) lcd_fill_rect(GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, COL_PROG);
+}
+
+// Full now-playing block: title (2 wrapped lines) + artist + progress. Repaints
+// only on a real metadata change (or force) to avoid re-blitting text every tick.
+static void draw_nowplaying(bool force) {
+    if (!force && !media_take_dirty()) return;
+    lcd_clear_rect(0, ZONE_Y0, PANEL_WIDTH, PANEL_HEIGHT - ZONE_Y0);
+
+    char l1[NP_CHARS + 1], l2[NP_CHARS + 1];
+    wrap_title(media_title(), l1, l2);
+    if (l1[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_TITLE_Y1, l1);
+    if (l2[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_TITLE_Y2, l2);
+
+    char art[NP_CHARS + 1];
+    fit_line(media_artist(), art);
+    if (art[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_ARTIST_Y, art);   // white (flash tiles can't dim)
+
+    draw_np_progress();
+}
+
+// View selection: now-playing when media is active and not force-cleared.
+static bool s_force_clock = false;
+static bool nowplaying_view(void) { return media_active() && !s_force_clock; }
+
+// Keycode hook: toggle "force the clock" while media is playing.
+void display_toggle_media(void) {
+    s_force_clock = !s_force_clock;
+    clock_force_repaint = true;
+    display_redraw_dashboard(0, NULL);
 }
 
 static void draw_status(bool force) {
     draw_conn_number(force);
-    draw_battery(force);
+    draw_battery_gauge(force);
 }
 
 void display_housekeeping_task(void) {
@@ -297,19 +400,32 @@ void display_housekeeping_task(void) {
         return;
 
     if (display_paused) return;   // animation owns the bus
+    if (!splash_cleared) return;
 
-    if (splash_cleared) {
-        // Connection digit every tick (~10 Hz) so its blink animates; self-guarded.
-        draw_conn_number(false);
+    // Connection digit every tick (~10 Hz) so its blink animates; self-guarded.
+    draw_conn_number(false);
 
-        // Clock + battery only need refreshing once per RTC second.
-        static uint32_t last_shown_sec = UINT32_MAX;
-        uint32_t sec = rtc_get_seconds();
-        if (sec != last_shown_sec) {
-            last_shown_sec = sec;
-            draw_clock();
-            draw_battery(false); // self-guards, only draws on change
-        }
+    // Switch views (media started/stopped, or the force-clock key) -> full repaint.
+    static int8_t last_view = -1;
+    int8_t view = nowplaying_view() ? 1 : 0;
+    if (view != last_view) {
+        last_view = view;
+        display_redraw_dashboard(0, NULL);
+        return;
+    }
+
+    // Metadata changes repaint the now-playing block immediately (self-guarded).
+    if (view) draw_nowplaying(false);
+
+    // Once per RTC second: advance the active view's time-driven bits + status.
+    static uint32_t last_sec = UINT32_MAX;
+    uint32_t sec = rtc_get_seconds();
+    if (sec != last_sec) {
+        last_sec = sec;
+        draw_date(false);
+        draw_battery_gauge(false);
+        if (view) draw_np_progress();   // progress bar advances
+        else      draw_clock_time();    // clock ticks
     }
 }
 

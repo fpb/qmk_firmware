@@ -30,7 +30,9 @@ const char *media_artist(void);
 uint32_t    media_elapsed_ms(void);   // self-advanced since the last host update
 uint32_t    media_duration_ms(void);
 
-// Returns (and clears) whether the state changed since the last call, so the
-// renderer repaints only when needed. While playing, it flips true at most once
-// per whole second so the progress bar/time advance without a host update.
+// Returns (and clears) whether a real host update (title/artist/state/clear)
+// arrived since the last call, so the renderer does a full now-playing repaint
+// only when the metadata changes. The once-per-second progress advance is not
+// reported here -- the renderer redraws just the progress bar from
+// media_elapsed_ms() on its own tick.
 bool        media_take_dirty(void);

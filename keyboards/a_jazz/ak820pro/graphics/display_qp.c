@@ -81,6 +81,10 @@ void display_toggle_power(void) {
     display_set_power(!display_powered);
 }
 
+// TODO: QP-backend now-playing view (mirror of the custom backend). For now a
+// stub so the SCR_MEDIA keycode links; the QP dashboard keeps showing the clock.
+void display_toggle_media(void) {}
+
 // Low-power display state (host-suspend + idle-sleep), the QP-backend twin of the
 // custom backend's display_enter/exit_sleep. Same primitive, but the panel is
 // blanked through QP (display-off opcode) instead of a raw sleep-in, since QP

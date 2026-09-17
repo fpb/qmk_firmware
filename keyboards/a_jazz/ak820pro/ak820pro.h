@@ -32,5 +32,6 @@ enum ak820pro_keycodes {
     RGBM_SPI,              // speed +
     RGBM_SPD,              // speed -
     ANIM_TOG,              // toggle the flash-animation player
+    SCR_MEDIA,             // force the clock vs the now-playing view (toggle)
     AK820PRO_SAFE_RANGE
 };

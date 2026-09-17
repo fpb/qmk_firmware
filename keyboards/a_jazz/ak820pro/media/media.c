@@ -23,8 +23,7 @@ static bool     s_playing;
 static uint32_t s_elapsed_ms;
 static uint32_t s_duration_ms;
 static uint32_t s_sync_tick;    // timer_read32() at the last MC_STATE
-static bool     s_dirty;
-static uint32_t s_last_sec;     // last whole second marked dirty for the ticking clock
+static bool     s_dirty;        // a real host update since the last media_take_dirty()
 
 // Copy an in-order string chunk into buf at off; offset 0 restarts. Raw HID is
 // USB and single-stream, so chunks for one field arrive in order.
@@ -50,7 +49,6 @@ void media_hid_command(uint8_t *data, uint8_t length) {
             s_duration_ms = (uint32_t)data[8] | ((uint32_t)data[9] << 8) |
                             ((uint32_t)data[10] << 16) | ((uint32_t)data[11] << 24);
             s_sync_tick   = timer_read32();
-            s_last_sec    = s_elapsed_ms / 1000u;
             s_active      = true;
             s_dirty       = true;
             break;
@@ -84,11 +82,10 @@ uint32_t media_elapsed_ms(void) {
     return e;
 }
 
+// Real host updates only (title/artist/state/clear) -- the renderer does a full
+// zone repaint on these. The once-per-second progress advance is handled by the
+// renderer redrawing just the bar, not here.
 bool media_take_dirty(void) {
-    if (s_active && s_playing) {
-        uint32_t sec = media_elapsed_ms() / 1000u;
-        if (sec != s_last_sec) { s_last_sec = sec; s_dirty = true; }
-    }
     bool d = s_dirty;
     s_dirty = false;
     return d;
