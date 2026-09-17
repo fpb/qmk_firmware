@@ -12,6 +12,7 @@
 #include "gpio.h"
 #include "rtc/rtc.h"
 #include "media/media.h"
+#include "graphics/nowplaying.h"
 
 #include "res/sonixqmk.qgf.h"
 #include "res/Iosevka-Regular-30.qff.h"
@@ -49,7 +50,7 @@
 #define NP_ARTIST_Y 90
 #define NP_BAR_Y    118
 #define NP_BAR_H    6
-#define NP_CHARS    12
+// NP_CHARS / NP_LINE_H come from graphics/nowplaying.h (shared with the custom backend).
 // QP colours as HSV triplets (hue 0-255). val=0 is black regardless of hue/sat.
 // NP_ prefix avoids QMK's own HSV_* color-constant macros (color.h).
 #define NP_BLACK 0, 0, 0
@@ -338,87 +339,36 @@ static void draw_battery_gauge(bool force) {
     if (fw) qp_rect(qp_display, GX0, GAUGE_Y, GX0 + fw, GAUGE_Y + GAUGE_H - 1, NP_BATT, true);
 }
 
-// Greedy word-wrap into two <=NP_CHARS lines; "..." on the last line if truncated.
-static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 1]) {
-    char *out[2] = { l1, l2 };
-    out[0][0] = out[1][0] = 0;
-    uint8_t li = 0;
-    const char *p = s;
-    bool overflow = false;
-    while (*p) {
-        while (*p == ' ') p++;
-        if (!*p) break;
-        const char *w = p;
-        while (*p && *p != ' ') p++;
-        uint8_t wl = (uint8_t)(p - w);
-        uint8_t cl = (uint8_t)strlen(out[li]);
-        uint8_t need = cl ? (uint8_t)(cl + 1 + wl) : wl;
-        if (need <= NP_CHARS) {
-            if (cl) { out[li][cl] = ' '; cl++; }
-            memcpy(out[li] + cl, w, wl); out[li][cl + wl] = 0;
-        } else if (cl == 0) {
-            memcpy(out[li], w, NP_CHARS); out[li][NP_CHARS] = 0;
-            overflow = true; break;
-        } else if (li == 0) {
-            li = 1;
-            uint8_t n = wl < NP_CHARS ? wl : NP_CHARS;
-            memcpy(out[1], w, n); out[1][n] = 0;
+// Draw the now-playing block, redrawing ONLY the parts the shared model reports
+// as changed. QP can recolor text, so the artist is drawn grey.
+static void draw_nowplaying(bool force) {
+    np_render_t r;
+    np_render(&r, force, GX1 - GX0);
+    if (!r.changed) return;
+
+    if (r.changed & NP_CH_L1) {
+        qp_rect(qp_display, 0, NP_TITLE_Y1, PANEL_WIDTH - 1, NP_TITLE_Y1 + NP_LINE_H - 1, NP_BLACK, true);
+        if (r.l1[0]) qp_drawtext(qp_display, 2, NP_TITLE_Y1, qp_status_font, r.l1);
+    }
+    if (r.changed & NP_CH_L2) {
+        qp_rect(qp_display, 0, NP_TITLE_Y2, PANEL_WIDTH - 1, NP_TITLE_Y2 + NP_LINE_H - 1, NP_BLACK, true);
+        if (r.l2[0]) qp_drawtext(qp_display, 2, NP_TITLE_Y2, qp_status_font, r.l2);
+    }
+    if (r.changed & NP_CH_ART) {
+        qp_rect(qp_display, 0, NP_ARTIST_Y, PANEL_WIDTH - 1, NP_ARTIST_Y + NP_LINE_H - 1, NP_BLACK, true);
+        if (r.art[0]) qp_drawtext_recolor(qp_display, 2, NP_ARTIST_Y, qp_status_font, r.art, NP_GREY, NP_BLACK);
+    }
+    if (r.changed & NP_CH_BAR) {
+        uint8_t ph = r.playing ? 150 : 0;      // blue playing, grey paused
+        uint8_t ps = r.playing ? 255 : 0;
+        uint8_t pv = r.playing ? 255 : 140;
+        if (r.bar_full) {
+            qp_rect(qp_display, GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H - 1, NP_TRACK, true);
+            if (r.fill) qp_rect(qp_display, GX0, NP_BAR_Y, GX0 + r.fill, NP_BAR_Y + NP_BAR_H - 1, ph, ps, pv, true);
         } else {
-            overflow = true; break;
+            qp_rect(qp_display, GX0 + r.prev_fill, NP_BAR_Y, GX0 + r.fill, NP_BAR_Y + NP_BAR_H - 1, ph, ps, pv, true);
         }
     }
-    while (*p == ' ') p++;
-    if (overflow || *p) {
-        char *L = out[1][0] ? l2 : l1;
-        uint8_t n = (uint8_t)strlen(L);
-        if (n > NP_CHARS - 3) n = NP_CHARS - 3;
-        L[n] = 0; strcat(L, "...");
-    }
-}
-
-static void fit_line(const char *s, char out[NP_CHARS + 1]) {
-    uint8_t n = 0;
-    while (s[n] && n < NP_CHARS) { out[n] = s[n]; n++; }
-    out[n] = 0;
-    if (s[n]) { if (n > NP_CHARS - 3) n = NP_CHARS - 3; out[n] = 0; strcat(out, "..."); }
-}
-
-// Progress bar: a tick extends the fill by the new strip only (time moves forward);
-// force / backward jump repaints the whole track+fill once.
-static void draw_np_progress(bool force) {
-    static uint16_t last_fw = 0xFFFF;
-    uint32_t dur = media_duration_ms(), el = media_elapsed_ms();
-    uint16_t fw = dur ? (uint16_t)((uint32_t)(GX1 - GX0) * el / dur) : 0;
-    if (fw > (GX1 - GX0)) fw = GX1 - GX0;
-    if (!force && fw == last_fw) return;
-    // Fill: accent blue when playing, neutral grey when paused.
-    uint8_t ph = media_playing() ? 150 : 0;
-    uint8_t ps = media_playing() ? 255 : 0;
-    uint8_t pv = media_playing() ? 255 : 140;
-    if (force || fw < last_fw) {
-        qp_rect(qp_display, GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H - 1, NP_TRACK, true);
-        if (fw) qp_rect(qp_display, GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H - 1, ph, ps, pv, true);
-    } else {
-        qp_rect(qp_display, GX0 + last_fw, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H - 1, ph, ps, pv, true);
-    }
-    last_fw = fw;
-}
-
-// Full now-playing block: title (2 wrapped lines, white) + artist (grey) + bar.
-static void draw_nowplaying(bool force) {
-    if (!force && !media_take_dirty()) return;
-    qp_rect(qp_display, 0, ZONE_Y0, PANEL_WIDTH - 1, PANEL_HEIGHT - 1, NP_BLACK, true);
-
-    char l1[NP_CHARS + 1], l2[NP_CHARS + 1];
-    wrap_title(media_title(), l1, l2);
-    if (l1[0]) qp_drawtext(qp_display, 2, NP_TITLE_Y1, qp_status_font, l1);
-    if (l2[0]) qp_drawtext(qp_display, 2, NP_TITLE_Y2, qp_status_font, l2);
-
-    char art[NP_CHARS + 1];
-    fit_line(media_artist(), art);
-    if (art[0]) qp_drawtext_recolor(qp_display, 2, NP_ARTIST_Y, qp_status_font, art, NP_GREY, NP_BLACK);
-
-    draw_np_progress(true);
 }
 
 // View selection + force-clock toggle (SCR_MEDIA).
@@ -456,7 +406,8 @@ void display_housekeeping_task(void) {
     }
 
     bool drew = false;
-    if (view) { draw_nowplaying(false); drew = true; }   // metadata change (self-guarded)
+    // Now-playing repaints only what changed (metadata + progress) every tick.
+    if (view) { draw_nowplaying(false); drew = true; }
 
     static uint32_t last_sec = UINT32_MAX;
     uint32_t sec = rtc_get_seconds();
@@ -464,8 +415,7 @@ void display_housekeeping_task(void) {
         last_sec = sec;
         draw_date(false);
         draw_battery_gauge(false);
-        if (view) draw_np_progress(false);   // extend the fill by the new strip
-        else      draw_clock_time();         // clock ticks
+        if (!view) draw_clock_time();        // clock ticks (bar handled above)
         drew = true;
     }
 

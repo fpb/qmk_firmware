@@ -55,6 +55,7 @@ SRC += bluetooth/ch582f_ajazz.c
 # The firmware reads the index at boot (flash_assets_init) and DMA-draws by id.
 
 SRC += graphics/flash_io.c
+SRC += graphics/nowplaying.c
 SRC += rtc/rtc.c
 SRC += media/media.c
 VPATH += bluetooth

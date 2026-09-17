@@ -13,6 +13,7 @@
 #include "gpio.h"
 #include "rtc/rtc.h"
 #include "media/media.h"
+#include "graphics/nowplaying.h"
 
 
 
@@ -288,7 +289,7 @@ static void draw_conn_number(bool force) {
 #define NP_ARTIST_Y 90
 #define NP_BAR_Y    118
 #define NP_BAR_H    6
-#define NP_CHARS    12               // Iosevka-Medium-20 chars per 128px line
+// NP_CHARS / NP_LINE_H come from graphics/nowplaying.h (shared with the QP backend).
 
 #define COL_TRACK 0x2965             // dark grey (gauge/progress track)
 #define COL_BATT  0x66EF             // green (battery fill)
@@ -307,87 +308,35 @@ static void draw_battery_gauge(bool force) {
     if (fw) lcd_fill_rect(GX0, GAUGE_Y, GX0 + fw, GAUGE_Y + GAUGE_H, COL_BATT);
 }
 
-// Greedy word-wrap into two <=NP_CHARS lines; "..." on the last line if truncated.
-static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 1]) {
-    char *out[2] = { l1, l2 };
-    out[0][0] = out[1][0] = 0;
-    uint8_t li = 0;
-    const char *p = s;
-    bool overflow = false;
-    while (*p) {
-        while (*p == ' ') p++;
-        if (!*p) break;
-        const char *w = p;
-        while (*p && *p != ' ') p++;
-        uint8_t wl = (uint8_t)(p - w);
-        uint8_t cl = (uint8_t)strlen(out[li]);
-        uint8_t need = cl ? (uint8_t)(cl + 1 + wl) : wl;
-        if (need <= NP_CHARS) {
-            if (cl) { out[li][cl] = ' '; cl++; }
-            memcpy(out[li] + cl, w, wl); out[li][cl + wl] = 0;
-        } else if (cl == 0) {                 // word alone longer than a line
-            memcpy(out[li], w, NP_CHARS); out[li][NP_CHARS] = 0;
-            overflow = true; break;
-        } else if (li == 0) {                 // wrap to line 2
-            li = 1;
-            uint8_t n = wl < NP_CHARS ? wl : NP_CHARS;
-            memcpy(out[1], w, n); out[1][n] = 0;
-        } else {
-            overflow = true; break;           // would need a 3rd line
+// Draw the now-playing block, redrawing ONLY the parts the shared model reports
+// as changed (title lines / artist / bar). No full-zone clear -> no flicker.
+// Flash tiles are baked white, so the artist can't be dimmed here (QP greys it).
+static void draw_nowplaying(bool force) {
+    np_render_t r;
+    np_render(&r, force, GX1 - GX0);
+    if (!r.changed) return;
+
+    if (r.changed & NP_CH_L1) {
+        lcd_clear_rect(0, NP_TITLE_Y1, PANEL_WIDTH, NP_LINE_H);
+        if (r.l1[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_TITLE_Y1, r.l1);
+    }
+    if (r.changed & NP_CH_L2) {
+        lcd_clear_rect(0, NP_TITLE_Y2, PANEL_WIDTH, NP_LINE_H);
+        if (r.l2[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_TITLE_Y2, r.l2);
+    }
+    if (r.changed & NP_CH_ART) {
+        lcd_clear_rect(0, NP_ARTIST_Y, PANEL_WIDTH, NP_LINE_H);
+        if (r.art[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_ARTIST_Y, r.art);
+    }
+    if (r.changed & NP_CH_BAR) {
+        uint16_t col = r.playing ? COL_PROG : COL_PAUSE;   // blue playing, grey paused
+        if (r.bar_full) {
+            lcd_fill_rect(GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H, COL_TRACK);
+            if (r.fill) lcd_fill_rect(GX0, NP_BAR_Y, GX0 + r.fill, NP_BAR_Y + NP_BAR_H, col);
+        } else {                                           // extend the fill only
+            lcd_fill_rect(GX0 + r.prev_fill, NP_BAR_Y, GX0 + r.fill, NP_BAR_Y + NP_BAR_H, col);
         }
     }
-    while (*p == ' ') p++;
-    if (overflow || *p) {                     // truncated -> ellipsis on the last line
-        char *L = out[1][0] ? l2 : l1;
-        uint8_t n = (uint8_t)strlen(L);
-        if (n > NP_CHARS - 3) n = NP_CHARS - 3;
-        L[n] = 0; strcat(L, "...");
-    }
-}
-
-// One line of at most NP_CHARS, ellipsised if longer (for the artist).
-static void fit_line(const char *s, char out[NP_CHARS + 1]) {
-    uint8_t n = 0;
-    while (s[n] && n < NP_CHARS) { out[n] = s[n]; n++; }
-    out[n] = 0;
-    if (s[n]) { if (n > NP_CHARS - 3) n = NP_CHARS - 3; out[n] = 0; strcat(out, "..."); }
-}
-
-// Progress bar. Time only moves forward, so a tick just extends the fill by the
-// newly-covered strip [last_fw, fw) -- no clearing or full redraw. force (or a
-// backward jump / new track) repaints the whole track+fill once.
-static void draw_np_progress(bool force) {
-    static uint16_t last_fw = 0xFFFF;
-    uint32_t dur = media_duration_ms(), el = media_elapsed_ms();
-    uint16_t fw = dur ? (uint16_t)((uint32_t)(GX1 - GX0) * el / dur) : 0;
-    if (fw > (GX1 - GX0)) fw = GX1 - GX0;
-    if (!force && fw == last_fw) return;                 // no visible change this tick
-    uint16_t col = media_playing() ? COL_PROG : COL_PAUSE;   // blue playing, grey paused
-    if (force || fw < last_fw) {                         // full bar (first paint / seek / play-pause)
-        lcd_fill_rect(GX0, NP_BAR_Y, GX1, NP_BAR_Y + NP_BAR_H, COL_TRACK);
-        if (fw) lcd_fill_rect(GX0, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, col);
-    } else {                                             // just extend the fill
-        lcd_fill_rect(GX0 + last_fw, NP_BAR_Y, GX0 + fw, NP_BAR_Y + NP_BAR_H, col);
-    }
-    last_fw = fw;
-}
-
-// Full now-playing block: title (2 wrapped lines) + artist + progress. Repaints
-// only on a real metadata change (or force) to avoid re-blitting text every tick.
-static void draw_nowplaying(bool force) {
-    if (!force && !media_take_dirty()) return;
-    lcd_clear_rect(0, ZONE_Y0, PANEL_WIDTH, PANEL_HEIGHT - ZONE_Y0);
-
-    char l1[NP_CHARS + 1], l2[NP_CHARS + 1];
-    wrap_title(media_title(), l1, l2);
-    if (l1[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_TITLE_Y1, l1);
-    if (l2[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_TITLE_Y2, l2);
-
-    char art[NP_CHARS + 1];
-    fit_line(media_artist(), art);
-    if (art[0]) lcd_draw_flash_text(FONT_STATUS, 2, NP_ARTIST_Y, art);   // white (flash tiles can't dim)
-
-    draw_np_progress(true);   // full bar over the freshly-cleared zone
 }
 
 // View selection: now-playing when media is active and not force-cleared.
@@ -425,18 +374,18 @@ void display_housekeeping_task(void) {
         return;
     }
 
-    // Metadata changes repaint the now-playing block immediately (self-guarded).
+    // Now-playing repaints only what changed (metadata + progress advance) every
+    // tick -- np_render() self-diffs, so most ticks draw nothing.
     if (view) draw_nowplaying(false);
 
-    // Once per RTC second: advance the active view's time-driven bits + status.
+    // Once per RTC second: status bits + the clock tick (the bar is handled above).
     static uint32_t last_sec = UINT32_MAX;
     uint32_t sec = rtc_get_seconds();
     if (sec != last_sec) {
         last_sec = sec;
         draw_date(false);
         draw_battery_gauge(false);
-        if (view) draw_np_progress(false);   // extend the fill by the new strip only
-        else      draw_clock_time();         // clock ticks
+        if (!view) draw_clock_time();        // clock ticks
     }
 }
 
