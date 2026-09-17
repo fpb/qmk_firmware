@@ -423,6 +423,10 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
         flash_command(data, length);
         return;
     }
+    if (length >= 2 && data[0] == RTC_SET_VALUE && data[1] == MEDIA_CHANNEL) {
+        media_hid_command(data, length);   // now-playing state (channel 0x12)
+        return;
+    }
     data[0] = RTC_UNHANDLED;
 }
 
