@@ -538,6 +538,12 @@ void housekeeping_task_kb(void) {
             && !lcd_blit_busy()) {
             rgb_settle_pending = false;
             eeconfig_update_rgb_matrix(&rgb_matrix_config);
+#ifdef CONSOLE_ENABLE
+            // eeconfig_update_rgb_matrix() writes flash silently (unlike the per-press
+            // [EEPROM] path we bypass), so log the single debounced write here.
+            dprintf("[rgb] settled -> eeprom flush: %u,%u,%u\n",
+                    rgb_matrix_config.hsv.h, rgb_matrix_config.hsv.s, rgb_matrix_config.hsv.v);
+#endif
         }
 #endif
     }
