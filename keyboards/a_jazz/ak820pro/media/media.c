@@ -12,12 +12,10 @@
 enum {
     MC_CLEAR  = 0x00,  // nothing playing -> revert to the clock
     MC_STATE  = 0x01,  // [playing(1)] [elapsed_ms u32 LE] [duration_ms u32 LE]
-    MC_TITLE  = 0x02,  // [offset(1)] [bytes...]   (offset 0 restarts the string)
-    MC_ARTIST = 0x03,  // [offset(1)] [bytes...]
+    MC_LINE   = 0x02,  // [line(1)] [offset(1)] [bytes...]  (offset 0 restarts line)
 };
 
-static char     s_title[MEDIA_STR_MAX + 1];
-static char     s_artist[MEDIA_STR_MAX + 1];
+static char     s_line[MEDIA_LINES][MEDIA_STR_MAX + 1];
 static bool     s_active;
 static bool     s_playing;
 static uint32_t s_elapsed_ms;
@@ -59,18 +57,15 @@ void media_hid_command(uint8_t *data, uint8_t length) {
             s_active      = true;
             s_dirty       = true;
             break;
-        case MC_TITLE:
-            if (length < 4) break;
-            put_chunk(s_title, data[3], &data[4], (uint8_t)(length - 4));
+        case MC_LINE: {
+            if (length < 5) break;
+            uint8_t line = data[3];
+            if (line >= MEDIA_LINES) break;
+            put_chunk(s_line[line], data[4], &data[5], (uint8_t)(length - 5));
             s_active = true;
             s_dirty  = true;
             break;
-        case MC_ARTIST:
-            if (length < 4) break;
-            put_chunk(s_artist, data[3], &data[4], (uint8_t)(length - 4));
-            s_active = true;
-            s_dirty  = true;
-            break;
+        }
         default:
             break;
     }
@@ -91,8 +86,7 @@ bool media_show(void) {
 #endif
     return true;
 }
-const char *media_title(void)       { return s_title; }
-const char *media_artist(void)      { return s_artist; }
+const char *media_line(uint8_t i)   { return i < MEDIA_LINES ? s_line[i] : ""; }
 uint32_t    media_duration_ms(void) { return s_duration_ms; }
 
 uint32_t media_elapsed_ms(void) {
