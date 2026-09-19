@@ -418,7 +418,12 @@ void anim_toggle(void) {
         blit_arm(ANIM_BASE + ANIM_HDR);
     } else {
         anim_on = false;
-        while (!blit_done) { /* let the in-flight frame finish */ }
+        // Bounded wait for the in-flight frame: a wedged blit must not hang the
+        // board forever (there is no exposed DMA abort, so on timeout we just
+        // declare the bus free and move on; the watchdog is the real backstop).
+        uint32_t t = timer_read32();
+        while (!blit_done && timer_elapsed32(t) < 150) { /* drain */ }
+        blit_done = true;
         gpio_write_pin(FLASH_CS, 1); cs(1);
         // The DMA extension restored SPI0 to the driver's 8-bit FIFO mode at the
         // last frame's completion, so the dashboard's spiSend path is ready again.

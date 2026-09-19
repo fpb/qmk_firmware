@@ -81,7 +81,10 @@ void display_enter_sleep(void) {
     s_anim_was_active = anim_active();
     if (s_anim_was_active) anim_toggle();  // stop the player (restores SPI0 + repaint)
     display_set_paused(true);              // stop the 10 Hz dashboard repaint
-    while (lcd_blit_busy()) { /* let any in-flight blit drain */ }
+    // Bounded drain: never spin forever on a wedged blit (the watchdog is the
+    // real backstop; here we just proceed to sleep after the timeout).
+    uint32_t t = timer_read32();
+    while (lcd_blit_busy() && timer_elapsed32(t) < 150) { /* let any in-flight blit drain */ }
     lcd_panel_sleep(true);                 // GC9107 display-off + sleep-in
     display_set_power(false);              // backlight off (the big visible draw)
 }
@@ -167,6 +170,7 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
 
     // Clear background.
     lcd_clear_rect(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+    np_invalidate();   // now-playing pixels are gone; keep the diff in sync
 
     // Full repaint: force the clock and date to redraw over the cleared screen.
     clock_force_repaint = true;
@@ -343,16 +347,28 @@ static void draw_nowplaying(bool force) {
 static bool s_force_clock = false;
 static bool nowplaying_view(void) { return media_show() && !s_force_clock; }
 
+// Repaint only the swappable content zone (everything below the header). The
+// header -- Mac/Win icon, connection icon + digit, date, and the battery gauge --
+// is identical in both views, so a clock<->now-playing switch must not touch it
+// (a full redraw there just flickers the top line and the gauge). Clears from
+// ZONE_Y0 down and redraws the view-specific content; the header stays on screen.
+static void redraw_view_content(void) {
+    lcd_clear_rect(0, ZONE_Y0, PANEL_WIDTH, PANEL_HEIGHT - ZONE_Y0);
+    np_invalidate();                                  // zone cleared -> resync the now-playing diff
+    clock_force_repaint = true;                       // force the clock cells to repaint
+    if (nowplaying_view()) draw_nowplaying(true);     // force: full block over the cleared zone
+    else                   draw_clock_time();
+}
+
 // Keycode hook: toggle "force the clock" while media is playing.
 void display_toggle_media(void) {
     s_force_clock = !s_force_clock;
-    clock_force_repaint = true;
     // Never drive SPI0 while the animation player owns the bus: it has DMA blits
-    // in flight and a concurrent dashboard redraw hangs the board. The flag flip
-    // persists; when the player stops, display_set_paused(false) repaints in the
-    // now-current view. (The media view isn't visible under the animation anyway.)
+    // in flight and a concurrent redraw hangs the board. The flag flip persists;
+    // when the player stops, display_set_paused(false) repaints in the now-current
+    // view. (The media view isn't visible under the animation anyway.)
     if (display_paused) return;
-    display_redraw_dashboard(0, NULL);
+    redraw_view_content();   // only the content zone changes; leave the header alone
 }
 
 static void draw_status(bool force) {
@@ -370,12 +386,13 @@ void display_housekeeping_task(void) {
     // Connection digit every tick (~10 Hz) so its blink animates; self-guarded.
     draw_conn_number(false);
 
-    // Switch views (media started/stopped, or the force-clock key) -> full repaint.
+    // Switch views (media started/stopped) -> repaint only the content zone; the
+    // header (icons/date/gauge/digit) is the same in both views, so leave it be.
     static int8_t last_view = -1;
     int8_t view = nowplaying_view() ? 1 : 0;
     if (view != last_view) {
         last_view = view;
-        display_redraw_dashboard(0, NULL);
+        redraw_view_content();
         return;
     }
 
