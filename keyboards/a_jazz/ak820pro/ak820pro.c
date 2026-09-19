@@ -13,6 +13,7 @@
 #include "media/media.h"
 #include "raw_hid.h"
 #include "rgb_matrix.h"
+#include "watchdog.h"
 #include "usb_main.h"     // USB_DRIVER (USBD1), USB_SUSPENDED
 
 // Current wireless mode, derived from the tri-state slider. The Fn BT controls
@@ -86,6 +87,10 @@ void early_hardware_init_post(void) {
 }
 
  void keyboard_post_init_kb(void) {
+    // Watchdog reset-cause accounting, before anything else can hang: reads and
+    // clears the WDT reset flag and maintains the consecutive-reset counter.
+    watchdog_boot_check();
+
     // Windows Lock and Charging LEDs: outputs, off initially. update_leds() then
     // tracks their real state, writing only on a change.
     gpio_set_pin_output(LED_WINLOCK_PIN);
@@ -118,6 +123,10 @@ void early_hardware_init_post(void) {
     // Chain the user hook: overriding keyboard_post_init_kb() replaces QMK's
     // default, which is what normally calls keyboard_post_init_user().
     keyboard_post_init_user();
+
+    // Arm the watchdog last, once boot is done -- from here a wedged main loop
+    // self-recovers in ~12 s instead of bricking until a power cycle.
+    watchdog_start();
  }
 
  bool dip_switch_update_kb(uint8_t index, bool active) {
@@ -532,6 +541,10 @@ void housekeeping_task_kb(void) {
 
     // Chain the user hook
     housekeeping_task_user();
+
+    // Kick the watchdog last: a full housekeeping pass completed, so the main
+    // loop is alive. A wedge anywhere upstream stops the kicks -> WDT reset.
+    watchdog_kick();
 }
 
 // --- Display/RGB sleep (B-lite idle timer + A USB-suspend) -------------------

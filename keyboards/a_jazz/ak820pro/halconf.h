@@ -17,6 +17,10 @@
 // to the fallback driver (see rtc.c / readme). The SN32 HW I2C peripheral cannot
 // reach those pins.
 #define HAL_USE_I2C TRUE
+
+/* Hardware watchdog (SN32 WDT). Armed at the end of post-init, kicked at the
+ * end of every housekeeping pass; see watchdog.c for the 12 s rationale. */
+#define HAL_USE_WDG TRUE
 #define SW_I2C_USE_I2C1 TRUE        // provides the I2CD1 instance
 #define SW_I2C_USE_OPENDRAIN FALSE  // emulate open-drain by input/output switching
 #define SW_I2C_USE_OSAL_DELAY FALSE // use rtc.c's busy-wait delay (non-yielding)

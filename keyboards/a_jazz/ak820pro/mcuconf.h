@@ -39,6 +39,10 @@
 #undef SN32_ST_USE_TIMER
 #define SN32_ST_USE_TIMER SN32_TIM_CT16B5
 
+/* Hardware watchdog on the SN32 WDT block (watchdog.c). */
+#undef SN32_WDG_USE_WDT
+#define SN32_WDG_USE_WDT TRUE
+
 #undef SN32_PWM_USE_CT16B0
 #define SN32_PWM_USE_CT16B0 TRUE
 #undef SN32_PWM_USE_CT16B1
