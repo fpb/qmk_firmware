@@ -8,7 +8,22 @@
 
 #include <string.h>
 
-// Greedy word-wrap into two <=NP_CHARS lines; "..." on the last line if truncated.
+// Single-char truncation marker, replacing "..." to reclaim two cells per line.
+#ifndef NP_ELLIPSIS
+#    define NP_ELLIPSIS ">"
+#endif
+
+// Copy a word capitalizing its first letter (CamelCase packing); returns n.
+static uint8_t copy_word_cap(char *dst, const char *w, uint8_t n) {
+    for (uint8_t i = 0; i < n; i++) dst[i] = w[i];
+    if (n && dst[0] >= 'a' && dst[0] <= 'z') dst[0] -= 32;
+    return n;
+}
+
+// CamelCase word-wrap into two <=NP_CHARS lines: inter-word spaces are dropped
+// and each word's first letter is capitalized, so word boundaries survive as
+// capitals and more text fits per line. Wrapping still happens on word (capital)
+// boundaries; NP_ELLIPSIS marks truncation on the last line.
 static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 1]) {
     char *out[2] = { l1, l2 };
     out[0][0] = out[1][0] = 0;
@@ -22,42 +37,66 @@ static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 
         while (*p && *p != ' ') p++;
         uint8_t wl = (uint8_t)(p - w);
         uint8_t cl = (uint8_t)strlen(out[li]);
-        uint8_t need = cl ? (uint8_t)(cl + 1 + wl) : wl;
+        uint8_t need = (uint8_t)(cl + wl);    // no inter-word space: CamelCase packs
         if (need <= NP_CHARS) {
-            if (cl) { out[li][cl] = ' '; cl++; }
-            memcpy(out[li] + cl, w, wl); out[li][cl + wl] = 0;
+            copy_word_cap(out[li] + cl, w, wl); out[li][cl + wl] = 0;
         } else if (cl == 0) {                 // word alone longer than a line
-            memcpy(out[li], w, NP_CHARS); out[li][NP_CHARS] = 0;
+            copy_word_cap(out[li], w, NP_CHARS); out[li][NP_CHARS] = 0;
             overflow = true; break;
-        } else if (li == 0) {                 // wrap to line 2
+        } else if (li == 0) {                 // start line 2 with this word
             li = 1;
             uint8_t n = wl < NP_CHARS ? wl : NP_CHARS;
-            memcpy(out[1], w, n); out[1][n] = 0;
+            copy_word_cap(out[1], w, n); out[1][n] = 0;
         } else {
             overflow = true; break;           // would need a 3rd line
         }
     }
     while (*p == ' ') p++;
-    if (overflow || *p) {                     // truncated -> ellipsis on the last line
+    if (overflow || *p) {                     // truncated -> single-char marker
         char *L = out[1][0] ? l2 : l1;
         uint8_t n = (uint8_t)strlen(L);
-        if (n > NP_CHARS - 3) n = NP_CHARS - 3;
-        L[n] = 0; strcat(L, "...");
+        if (n > NP_CHARS - 1) n = NP_CHARS - 1;
+        L[n] = 0; strcat(L, NP_ELLIPSIS);
     }
 }
 
-// One line of at most NP_CHARS, ellipsised if longer (for the artist).
+// One CamelCase line of at most NP_CHARS (spaces dropped, word-initials capped),
+// NP_ELLIPSIS-marked if the source did not fit. For the artist.
 static void fit_line(const char *s, char out[NP_CHARS + 1]) {
-    uint8_t n = 0;
-    while (s[n] && n < NP_CHARS) { out[n] = s[n]; n++; }
-    out[n] = 0;
-    if (s[n]) { if (n > NP_CHARS - 3) n = NP_CHARS - 3; out[n] = 0; strcat(out, "..."); }
+    uint8_t o = 0;
+    bool    ws = true, more = false;
+    for (const char *p = s; *p; p++) {
+        if (*p == ' ') { ws = true; continue; }
+        char c = *p;
+        if (ws && c >= 'a' && c <= 'z') c -= 32;   // capitalize word-initial
+        if (o >= NP_CHARS) { more = true; break; }  // ran out of room, more remains
+        out[o++] = c; ws = false;
+    }
+    out[o] = 0;
+    if (more) {
+        uint8_t n = o; if (n > NP_CHARS - 1) n = NP_CHARS - 1;
+        out[n] = 0; strcat(out, NP_ELLIPSIS);
+    }
 }
 
 // Last committed render (the pixels currently on screen).
 static char     last_l1[NP_CHARS + 1], last_l2[NP_CHARS + 1], last_art[NP_CHARS + 1];
 static int8_t   last_playing = -1;
 static uint16_t last_fill = 0xFFFF;    // 0xFFFF = nothing drawn yet
+
+// Invalidate the "what's on screen" cache so the next np_render() repaints every
+// field. MUST be called whenever the now-playing pixels are cleared by something
+// other than np_render itself (a view switch, a full dashboard repaint, sleep,
+// the animation player) -- otherwise last_* outlives the pixels and a later
+// same-value update is diffed away, leaving the field blank until a reboot. The
+// sentinels are strings no real field can equal ('\1'), plus the "nothing drawn"
+// markers for the bar/state.
+void np_invalidate(void) {
+    last_l1[0] = last_l2[0] = last_art[0] = '\1';
+    last_l1[1] = last_l2[1] = last_art[1] = '\0';
+    last_playing = -1;
+    last_fill    = 0xFFFF;
+}
 
 void np_render(np_render_t *r, bool force, uint16_t bar_w) {
     bool meta = media_take_dirty();    // a real title/artist/state update arrived
