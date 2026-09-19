@@ -195,20 +195,23 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             if (record->event.pressed) display_toggle_media();
             return false;
 #ifdef RGB_MATRIX_ENABLE
-        // VIA-assignable RGB-matrix controls (see ak820pro.h). One step per press.
-        // Use the *_noeeprom variants + a debounced flush (rgb_settle_arm) so rapid
-        // presses don't hammer internal-flash EEPROM writes (see RGB_SETTLE_MS above).
-        case RGBM_TOG:  if (record->event.pressed) { rgb_matrix_toggle_noeeprom();       rgb_settle_arm(); } return false;
-        case RGBM_MOD:  if (record->event.pressed) { rgb_matrix_step_noeeprom();         rgb_settle_arm(); } return false;
-        case RGBM_RMOD: if (record->event.pressed) { rgb_matrix_step_reverse_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_HUI:  if (record->event.pressed) { rgb_matrix_increase_hue_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_HUD:  if (record->event.pressed) { rgb_matrix_decrease_hue_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_SAI:  if (record->event.pressed) { rgb_matrix_increase_sat_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_SAD:  if (record->event.pressed) { rgb_matrix_decrease_sat_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_VAI:  if (record->event.pressed) { rgb_matrix_increase_val_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_VAD:  if (record->event.pressed) { rgb_matrix_decrease_val_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_SPI:  if (record->event.pressed) { rgb_matrix_increase_speed_noeeprom(); rgb_settle_arm(); } return false;
-        case RGBM_SPD:  if (record->event.pressed) { rgb_matrix_decrease_speed_noeeprom(); rgb_settle_arm(); } return false;
+        // RGB-matrix controls, debounced. Both the VIA-assignable custom keycodes
+        // (RGBM_*, see ak820pro.h) AND QMK's built-in ones (RM_*, which the keymaps
+        // actually use) are intercepted here: use the *_noeeprom variants + a
+        // debounced flush (rgb_settle_arm), and return false so QMK core does NOT
+        // also run its own eeprom-writing handler. Without catching RM_* too, rapid
+        // presses hammer a flash write per keystroke (the observed [EEPROM] spam).
+        case RGBM_TOG:  case RM_TOGG:  if (record->event.pressed) { rgb_matrix_toggle_noeeprom();        rgb_settle_arm(); } return false;
+        case RGBM_MOD:  case RM_NEXT:  if (record->event.pressed) { rgb_matrix_step_noeeprom();          rgb_settle_arm(); } return false;
+        case RGBM_RMOD: case RM_PREV:  if (record->event.pressed) { rgb_matrix_step_reverse_noeeprom();  rgb_settle_arm(); } return false;
+        case RGBM_HUI:  case RM_HUEU:  if (record->event.pressed) { rgb_matrix_increase_hue_noeeprom();  rgb_settle_arm(); } return false;
+        case RGBM_HUD:  case RM_HUED:  if (record->event.pressed) { rgb_matrix_decrease_hue_noeeprom();  rgb_settle_arm(); } return false;
+        case RGBM_SAI:  case RM_SATU:  if (record->event.pressed) { rgb_matrix_increase_sat_noeeprom();  rgb_settle_arm(); } return false;
+        case RGBM_SAD:  case RM_SATD:  if (record->event.pressed) { rgb_matrix_decrease_sat_noeeprom();  rgb_settle_arm(); } return false;
+        case RGBM_VAI:  case RM_VALU:  if (record->event.pressed) { rgb_matrix_increase_val_noeeprom();  rgb_settle_arm(); } return false;
+        case RGBM_VAD:  case RM_VALD:  if (record->event.pressed) { rgb_matrix_decrease_val_noeeprom();  rgb_settle_arm(); } return false;
+        case RGBM_SPI:  case RM_SPDU:  if (record->event.pressed) { rgb_matrix_increase_speed_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_SPD:  case RM_SPDD:  if (record->event.pressed) { rgb_matrix_decrease_speed_noeeprom(); rgb_settle_arm(); } return false;
 #endif
         /* BT slot keys use the @isuua/edthu devctrl model: TAP = select the slot
          * (A6 <slot>, reconnect the existing bond); HOLD = select + pair (adds
