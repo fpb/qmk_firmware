@@ -20,11 +20,11 @@ static uint8_t copy_word_cap(char *dst, const char *w, uint8_t n) {
     return n;
 }
 
-// CamelCase word-wrap into two <=NP_CHARS lines: inter-word spaces are dropped
-// and each word's first letter is capitalized, so word boundaries survive as
-// capitals and more text fits per line. Wrapping still happens on word (capital)
-// boundaries; NP_ELLIPSIS marks truncation on the last line.
-static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 1]) {
+// One greedy wrap pass into two <=NP_CHARS lines. collapse=false keeps the text
+// as-is (spaces, original case); collapse=true CamelCase-packs it (drop spaces,
+// capitalize word-initials) to fit more. Returns true if it overflowed (some
+// word did not fit). Wrapping always breaks on word boundaries either way.
+static bool wrap_pass(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 1], bool collapse) {
     char *out[2] = { l1, l2 };
     out[0][0] = out[1][0] = 0;
     uint8_t li = 0;
@@ -35,41 +35,60 @@ static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 
         if (!*p) break;
         const char *w = p;
         while (*p && *p != ' ') p++;
-        uint8_t wl = (uint8_t)(p - w);
-        uint8_t cl = (uint8_t)strlen(out[li]);
-        uint8_t need = (uint8_t)(cl + wl);    // no inter-word space: CamelCase packs
+        uint8_t wl  = (uint8_t)(p - w);
+        uint8_t cl  = (uint8_t)strlen(out[li]);
+        uint8_t sep = (!collapse && cl) ? 1u : 0u;   // keep a space between words unless collapsing
+        uint8_t need = (uint8_t)(cl + sep + wl);
         if (need <= NP_CHARS) {
-            copy_word_cap(out[li] + cl, w, wl); out[li][cl + wl] = 0;
-        } else if (cl == 0) {                 // word alone longer than a line
-            copy_word_cap(out[li], w, NP_CHARS); out[li][NP_CHARS] = 0;
+            if (sep) out[li][cl++] = ' ';
+            if (collapse) copy_word_cap(out[li] + cl, w, wl);
+            else          memcpy(out[li] + cl, w, wl);
+            out[li][cl + wl] = 0;
+        } else if (cl == 0) {                        // word alone longer than a line
+            if (collapse) copy_word_cap(out[li], w, NP_CHARS);
+            else          memcpy(out[li], w, NP_CHARS);
+            out[li][NP_CHARS] = 0;
             overflow = true; break;
-        } else if (li == 0) {                 // start line 2 with this word
+        } else if (li == 0) {                        // start line 2 with this word
             li = 1;
             uint8_t n = wl < NP_CHARS ? wl : NP_CHARS;
-            copy_word_cap(out[1], w, n); out[1][n] = 0;
+            if (collapse) copy_word_cap(out[1], w, n);
+            else          memcpy(out[1], w, n);
+            out[1][n] = 0;
         } else {
-            overflow = true; break;           // would need a 3rd line
+            overflow = true; break;                  // would need a 3rd line
         }
     }
     while (*p == ' ') p++;
-    if (overflow || *p) {                     // truncated -> single-char marker
-        char *L = out[1][0] ? l2 : l1;
-        uint8_t n = (uint8_t)strlen(L);
-        if (n > NP_CHARS - 1) n = NP_CHARS - 1;
-        L[n] = 0; strcat(L, NP_ELLIPSIS);
-    }
+    if (*p) overflow = true;                         // words left over
+    return overflow;
 }
 
-// One CamelCase line of at most NP_CHARS (spaces dropped, word-initials capped),
-// NP_ELLIPSIS-marked if the source did not fit. For the artist.
+// Title -> two lines. Keep the text as-is (spaces, original case) when it fits;
+// only fall back to CamelCase packing when the spaced form would truncate, and
+// only then add the NP_ELLIPSIS marker if even that overflows.
+static void wrap_title(const char *s, char l1[NP_CHARS + 1], char l2[NP_CHARS + 1]) {
+    if (!wrap_pass(s, l1, l2, false)) return;        // fits with spaces: done
+    if (!wrap_pass(s, l1, l2, true))  return;        // fits once collapsed: done
+    char *L = l2[0] ? l2 : l1;                       // still too long: mark truncation
+    uint8_t n = (uint8_t)strlen(L);
+    if (n > NP_CHARS - 1) n = NP_CHARS - 1;
+    L[n] = 0; strcat(L, NP_ELLIPSIS);
+}
+
+// Artist -> one line. Keep it as-is when it fits; else CamelCase-collapse; else
+// NP_ELLIPSIS-mark the truncation.
 static void fit_line(const char *s, char out[NP_CHARS + 1]) {
+    uint8_t len = (uint8_t)strlen(s);
+    if (len <= NP_CHARS) { memcpy(out, s, len); out[len] = 0; return; }  // fits as-is
+
     uint8_t o = 0;
     bool    ws = true, more = false;
     for (const char *p = s; *p; p++) {
         if (*p == ' ') { ws = true; continue; }
         char c = *p;
-        if (ws && c >= 'a' && c <= 'z') c -= 32;   // capitalize word-initial
-        if (o >= NP_CHARS) { more = true; break; }  // ran out of room, more remains
+        if (ws && c >= 'a' && c <= 'z') c -= 32;      // capitalize word-initial
+        if (o >= NP_CHARS) { more = true; break; }    // ran out of room, more remains
         out[o++] = c; ws = false;
     }
     out[o] = 0;
