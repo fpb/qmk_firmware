@@ -89,6 +89,11 @@ static void blit_arm(uint32_t addr) {
     spiSN32FlashDmaFire(&SPID0, blit_done_cb);
 }
 
+// True while a flash->LCD DMA frame is in flight (mirrors the custom backend, so
+// shared code -- e.g. the RGB eeconfig-flush gate in ak820pro.c -- can defer flash
+// writes off the DMA window).
+bool lcd_blit_busy(void) { return !blit_done; }
+
 // ---------------------------------------------------------------------------
 // Animation player
 // ---------------------------------------------------------------------------

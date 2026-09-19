@@ -53,6 +53,25 @@ static void save_bt_profile(ch582_profile_t p) {
 static uint16_t bt_pair_timer = 0;
 static bool     bt_pair_armed = false;
 
+#ifdef RGB_MATRIX_ENABLE
+// Debounced RGB-config persistence. The RGBM_* keycodes change the live config
+// with the *_noeeprom variants and arm this timer; housekeeping writes to EEPROM
+// once, RGB_SETTLE_MS after the LAST change. On this board EEPROM is wear-leveled
+// in the MCU's internal flash, and a flash program/erase stalls the core -- so
+// persisting on every keypress while spamming brightness/hue hammers the flash and
+// can hang the board. One write after the user settles is enough. (Same approach
+// as jdlien's RGB_SETTLE_MS.)
+#    ifndef RGB_SETTLE_MS
+#        define RGB_SETTLE_MS 900
+#    endif
+static bool     rgb_settle_pending = false;
+static uint32_t rgb_settle_timer   = 0;
+static inline void rgb_settle_arm(void) {
+    rgb_settle_pending = true;
+    rgb_settle_timer   = timer_read32();
+}
+#endif
+
 void early_hardware_init_post(void) {
     // Configure SPI0 pins for the LCD panel. SEL0 is left UNMUXED: our bare-metal bus
     // (graphics/lcd_bus.c) drives CS (B8) as a plain GPIO and must hold it low across
@@ -168,17 +187,19 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             return false;
 #ifdef RGB_MATRIX_ENABLE
         // VIA-assignable RGB-matrix controls (see ak820pro.h). One step per press.
-        case RGBM_TOG:  if (record->event.pressed) rgb_matrix_toggle();         return false;
-        case RGBM_MOD:  if (record->event.pressed) rgb_matrix_step();           return false;
-        case RGBM_RMOD: if (record->event.pressed) rgb_matrix_step_reverse();   return false;
-        case RGBM_HUI:  if (record->event.pressed) rgb_matrix_increase_hue();   return false;
-        case RGBM_HUD:  if (record->event.pressed) rgb_matrix_decrease_hue();   return false;
-        case RGBM_SAI:  if (record->event.pressed) rgb_matrix_increase_sat();   return false;
-        case RGBM_SAD:  if (record->event.pressed) rgb_matrix_decrease_sat();   return false;
-        case RGBM_VAI:  if (record->event.pressed) rgb_matrix_increase_val();   return false;
-        case RGBM_VAD:  if (record->event.pressed) rgb_matrix_decrease_val();   return false;
-        case RGBM_SPI:  if (record->event.pressed) rgb_matrix_increase_speed(); return false;
-        case RGBM_SPD:  if (record->event.pressed) rgb_matrix_decrease_speed(); return false;
+        // Use the *_noeeprom variants + a debounced flush (rgb_settle_arm) so rapid
+        // presses don't hammer internal-flash EEPROM writes (see RGB_SETTLE_MS above).
+        case RGBM_TOG:  if (record->event.pressed) { rgb_matrix_toggle_noeeprom();       rgb_settle_arm(); } return false;
+        case RGBM_MOD:  if (record->event.pressed) { rgb_matrix_step_noeeprom();         rgb_settle_arm(); } return false;
+        case RGBM_RMOD: if (record->event.pressed) { rgb_matrix_step_reverse_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_HUI:  if (record->event.pressed) { rgb_matrix_increase_hue_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_HUD:  if (record->event.pressed) { rgb_matrix_decrease_hue_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_SAI:  if (record->event.pressed) { rgb_matrix_increase_sat_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_SAD:  if (record->event.pressed) { rgb_matrix_decrease_sat_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_VAI:  if (record->event.pressed) { rgb_matrix_increase_val_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_VAD:  if (record->event.pressed) { rgb_matrix_decrease_val_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_SPI:  if (record->event.pressed) { rgb_matrix_increase_speed_noeeprom(); rgb_settle_arm(); } return false;
+        case RGBM_SPD:  if (record->event.pressed) { rgb_matrix_decrease_speed_noeeprom(); rgb_settle_arm(); } return false;
 #endif
         /* BT slot keys use the @isuua/edthu devctrl model: TAP = select the slot
          * (A6 <slot>, reconnect the existing bond); HOLD = select + pair (adds
@@ -494,6 +515,19 @@ void housekeeping_task_kb(void) {
         if (!anim_active()) rtc_task();   // RTC I2C (port A) glitches the flash SPI1 pins (A12/A13) mid-DMA
         anim_task();                      // one animation frame per 100 ms
         display_housekeeping_task();
+
+#ifdef RGB_MATRIX_ENABLE
+        // Persist RGB config once, RGB_SETTLE_MS after the last RGBM_* change (the
+        // keycodes use *_noeeprom). Avoids a flash write per keypress -> no hang.
+        // Gate on the LCD DMA: an internal-flash program while a blit is in flight
+        // stalls the vector fetch and can corrupt/wedge the transfer, so defer to a
+        // later tick if a blit is busy (the flush is not time-critical).
+        if (rgb_settle_pending && timer_elapsed32(rgb_settle_timer) >= RGB_SETTLE_MS
+            && !lcd_blit_busy()) {
+            rgb_settle_pending = false;
+            eeconfig_update_rgb_matrix(&rgb_matrix_config);
+        }
+#endif
     }
 
     // Chain the user hook
