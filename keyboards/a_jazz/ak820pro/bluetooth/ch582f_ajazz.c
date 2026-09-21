@@ -36,6 +36,40 @@
 #    define CH582_BATTERY_POLL_MS 5000
 #endif
 
+/* The module's ONLY "connected" signal is a single, never-repeated 5B 32 (see
+ * the frame-format note above ch582_service). This protocol has no ACKs and no
+ * way to query state, so if that one frame is dropped the driver is stranded
+ * in LINKING forever despite the link actually being up. Backstop: a 5A (host
+ * LED) frame while LINKING is a side effect of an established link, so use it
+ * to infer CONNECTED. Gated by a dwell so a real 5B 32 always wins first (it
+ * would arrive well within this window on a healthy link). */
+#ifndef CH582_5A_PROMOTE_MS
+#    define CH582_5A_PROMOTE_MS 3000
+#endif
+
+/* Pairing (A6 51) is fire-and-forget like every other command on this link, so
+ * a dropped frame silently strands hold-to-pair with no symptom to retry on
+ * (see the BT fix notes: this read as a timing threshold, but wasn't one).
+ * Resend until the module confirms via 5B 31/32 or we give up. */
+#ifndef CH582_PAIR_RETRY_MS
+#    define CH582_PAIR_RETRY_MS 400
+#endif
+#ifndef CH582_PAIR_MAX_TRIES
+#    define CH582_PAIR_MAX_TRIES 12
+#endif
+
+/* The module ignores an A6 <slot> select for a slot that is already
+ * advertising -- for the whole advertising window (minutes), not a brief
+ * timing window. Naming a different slot forces an immediate state change,
+ * so a same-slot reselect bounces through another slot first, then re-issues
+ * the real target after this dwell (see the BT fix notes' hypothesis walk).
+ * Known trade-off: the bounce slot can briefly connect (observed 5B 32 on the
+ * bounce) -- unavoidable, since forcing the state change requires naming
+ * another slot, the same exposure the manual workaround has. */
+#ifndef CH582_BOUNCE_MS
+#    define CH582_BOUNCE_MS 700
+#endif
+
 static volatile bool    is_module_connected = false;
 /* Active BT slot 1-3. Derived from the selected 0xA6 profile, NOT from the 5B
  * stream: a logic-analyzer capture proved the 5B second byte is a handshake-STAGE
@@ -68,6 +102,19 @@ static volatile bool    module_alive = false;
 static uint16_t         last_attempt_time = 0;
 /* Last time a battery poll (A6 53) was sent. */
 static uint16_t         last_battery_poll = 0;
+/* When conn_state last became LINKING; dwell base for the 5A promote backstop. */
+static uint16_t         linking_since = 0;
+
+/* A6 51 (pairing) resend state: pending until the module confirms via 5B 31/32
+ * or the retry budget runs out. */
+static volatile bool    pairing_pending = false;
+static uint8_t          pairing_tries      = 0;
+static uint16_t         pairing_last_send  = 0;
+
+/* Same-slot-reselect-while-advertising bounce state (see CH582_BOUNCE_MS). */
+static volatile bool    bounce_pending        = false;
+static uint8_t          bounce_target_profile = 0;
+static uint16_t         bounce_started        = 0;
 
 /* Request a battery-level report from the module. Logic-analyzer-decoded from the
  * stock firmware: the MCU sends `A6 53` and the module replies with a `5C <pct>`
@@ -97,10 +144,15 @@ static const SerialConfig serial_cfg = {
 };
 
 /* True when key reports should be forwarded to the module over UART: a BT/2.4G
- * profile is selected (dip switch in a wireless position) AND the link is up.
- * In USB mode connect_requested is cleared, so we never double-type. */
+ * profile is selected (dip switch in a wireless position). Deliberately NOT
+ * gated on is_module_connected: bluetooth_send_keyboard() never was (it always
+ * sends A1 and relies on the reliable TX queue to hold/retry), and gating only
+ * the consumer path on link state made the encoder go silent whenever the link
+ * was momentarily down (e.g. stranded in LINKING) while typing kept working --
+ * an asymmetry that read as "Bluetooth mostly works". In USB mode
+ * connect_requested is cleared, so we never double-type or double-send. */
 static bool ch582_kbd_output_active(void) {
-    return connect_requested && is_module_connected;
+    return connect_requested;
 }
 
 /* Service the CH582 link once: pump the reliable TX queue and process any
@@ -293,14 +345,31 @@ static void ch582_send_ack(void) {
 #endif
 
 void ch582_set_profile(ch582_profile_t profile) {
-    uint8_t param       = (uint8_t)profile;
-    requested_profile   = param;
-    connect_requested   = true;
-    usb_mode            = false;
-    is_module_connected = false;
-    conn_state          = CH582_CONN_LINKING;   /* attempting until 5B says otherwise */
-    last_attempt_time   = timer_read();
-    ch582_send_command(0xA6, &param, 1);
+    uint8_t param = (uint8_t)profile;
+
+    /* Reselecting the slot that's currently advertising is otherwise a no-op
+     * for the module (see CH582_BOUNCE_MS above): bounce through a different
+     * slot first, then let ch582_task() re-issue the real target after the
+     * dwell instead of sending both back-to-back. */
+    if (is_pairing && requested_profile == param) {
+        uint8_t bounce         = (param == CH582_PROFILE_BT_1) ? (uint8_t)CH582_PROFILE_BT_2 : (uint8_t)CH582_PROFILE_BT_1;
+        bounce_pending         = true;
+        bounce_target_profile  = param;
+        bounce_started         = timer_read();
+        ch582_send_command(0xA6, &bounce, 1);
+    } else {
+        bounce_pending = false;   /* a fresh selection supersedes any bounce in flight */
+        ch582_send_command(0xA6, &param, 1);
+    }
+
+    pairing_pending      = false;   /* a new selection supersedes any pairing retry in flight */
+    requested_profile    = param;
+    connect_requested    = true;
+    usb_mode             = false;
+    is_module_connected  = false;
+    conn_state           = CH582_CONN_LINKING;   /* attempting until 5B says otherwise */
+    linking_since        = timer_read();
+    last_attempt_time    = timer_read();
 }
 
 /* Pairing command, decoded from stock TX captures: a CONSTANT `0xA6 0x51`, sent
@@ -316,8 +385,12 @@ void ch582_enter_pairing(void) {
     is_module_connected = false;
     is_pairing          = true;
     conn_state          = CH582_CONN_PAIRING;
-    /* Sent ONCE, matching the @isuua/edthu reference. Stock repeated it, but the
-     * ACK/retry queue now guarantees delivery, so one is enough. */
+    /* A6 51 carries no slot of its own and the link has no ACK, so a dropped
+     * frame here silently strands hold-to-pair (see CH582_PAIR_RETRY_MS
+     * above). Resend from ch582_task() until 5B 31/32 confirms or we give up. */
+    pairing_pending     = true;
+    pairing_tries       = 0;
+    pairing_last_send   = timer_read();
     ch582_send_command(0xA6, &param, 1);
 }
 
@@ -333,6 +406,8 @@ void ch582_cancel_connect(void) {
     connect_requested = false;
     usb_mode          = true;
     conn_state        = CH582_CONN_IDLE;
+    pairing_pending   = false;
+    bounce_pending    = false;
 }
 
 bool ch582_is_connected(void) {
@@ -439,11 +514,27 @@ static void ch582_service(void) {
                     /* The 1-byte additive checksum is weak, so the mixed RX stream
                      * (notably the CH582F power-up / 2.4G link-up burst) can throw a
                      * bogus 5A frame that spuriously lights Caps. Guard twofold:
-                     *   - only honor LED frames once a link exists, and
+                     *   - only honor LED frames once a link exists (or is about to be
+                     *     inferred as one below), and
                      *   - require a plausible HID LED bitmap (low 5 bits only:
                      *     num/caps/scroll/compose/kana). Random garbage that happens
                      *     to pass the checksum usually has high bits set. */
-                    if (is_module_connected && (d & ~0x1F) == 0) host_leds = d;
+                    if ((d & ~0x1F) == 0) {
+                        if (is_module_connected) {
+                            host_leds = d;
+                        } else if (conn_state == CH582_CONN_LINKING &&
+                                   timer_elapsed(linking_since) >= CH582_5A_PROMOTE_MS) {
+                            /* Backstop for a dropped 5B 32 (see CH582_5A_PROMOTE_MS
+                             * above): this frame is a side effect of an established
+                             * link, so treat it as one. */
+                            is_module_connected = true;
+                            is_pairing          = false;
+                            conn_state          = CH582_CONN_CONNECTED;
+                            connected_slot      = profile_to_slot(requested_profile);
+                            pairing_pending      = false;
+                            host_leds            = d;
+                        }
+                    }
                     break;
                 case 0x5B: /* connection state code (NOT a slot number) */
                     switch (d) {
@@ -452,6 +543,7 @@ static void ch582_service(void) {
                             is_pairing          = false;
                             conn_state          = CH582_CONN_CONNECTED;
                             connected_slot      = profile_to_slot(requested_profile);
+                            pairing_pending      = false;
                             break;
                         case 0x31: /* advertising / pairing, waiting for a device */
                             is_pairing          = true;
@@ -459,6 +551,7 @@ static void ch582_service(void) {
                             conn_state          = CH582_CONN_PAIRING;
                             connected_slot      = 0;
                             host_leds           = 0; /* no link -> drop stale LED state */
+                            pairing_pending      = false;   /* module confirmed it heard the pair request */
                             break;
                         case 0x33: /* connect ATTEMPT - link is down and retrying */
                         case 0x34:
@@ -467,6 +560,7 @@ static void ch582_service(void) {
                             conn_state          = CH582_CONN_LINKING;
                             connected_slot      = 0;
                             host_leds           = 0; /* no link -> drop stale LED state */
+                            linking_since        = timer_read();
                             break;
                         case 0x36: /* host REFUSED the connection (edthu MD_REV REJECT) */
                             is_module_connected = false;
@@ -517,6 +611,27 @@ void ch582_task(void) {
         timer_elapsed(last_attempt_time) >= CH582_CONNECT_RETRY_MS) {
         last_attempt_time = timer_read();
         uint8_t param = requested_profile;
+        ch582_send_command(0xA6, &param, 1);
+    }
+
+    /* Resend A6 51 (pairing) until the module confirms via 5B 31/32, since a
+     * dropped frame here has no other symptom to catch it (see
+     * CH582_PAIR_RETRY_MS above). */
+    if (pairing_pending && timer_elapsed(pairing_last_send) >= CH582_PAIR_RETRY_MS) {
+        if (++pairing_tries > CH582_PAIR_MAX_TRIES) {
+            pairing_pending = false;
+        } else {
+            pairing_last_send = timer_read();
+            uint8_t param      = CH582_PAIR_PARAM;
+            ch582_send_command(0xA6, &param, 1);
+        }
+    }
+
+    /* Follow through on a same-slot-reselect bounce (see CH582_BOUNCE_MS
+     * above): the dwell has passed, so re-issue the real target now. */
+    if (bounce_pending && timer_elapsed(bounce_started) >= CH582_BOUNCE_MS) {
+        bounce_pending = false;
+        uint8_t param   = bounce_target_profile;
         ch582_send_command(0xA6, &param, 1);
     }
 
