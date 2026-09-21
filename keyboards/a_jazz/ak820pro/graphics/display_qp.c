@@ -205,6 +205,7 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
 
     // Clear background
     qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
+    np_invalidate();   // now-playing pixels are gone; keep the diff in sync
 
     // Full repaint: force the clock and date to redraw over the cleared screen.
     clock_force_repaint = true;
@@ -375,15 +376,28 @@ static void draw_nowplaying(bool force) {
 static bool s_force_clock = false;
 static bool nowplaying_view(void) { return media_show() && !s_force_clock; }
 
+// Repaint only the swappable content zone (below the header). The header --
+// Mac/Win icon, connection icon + digit, date, and the battery gauge -- is
+// identical in both views, so a clock<->now-playing switch must not touch it (a
+// full redraw there just flickers the top line and the gauge). Clears from
+// ZONE_Y0 down and redraws the view-specific content; the header stays on screen.
+static void redraw_view_content(void) {
+    qp_rect(qp_display, 0, ZONE_Y0, PANEL_WIDTH, PANEL_HEIGHT, 0, 0, 0, true);  // clear zone (black)
+    np_invalidate();                                  // zone cleared -> resync the now-playing diff
+    clock_force_repaint = true;                       // force the clock cells to repaint
+    if (nowplaying_view()) draw_nowplaying(true);     // force: full block over the cleared zone
+    else                   draw_clock_time();
+    qp_flush(qp_display);
+}
+
 void display_toggle_media(void) {
     s_force_clock = !s_force_clock;
-    clock_force_repaint = true;
     // Never drive the panel while the animation player owns the bus: it has a
     // frame blit in flight and a concurrent redraw hangs the board. The flag flip
     // persists; when the player stops, display_set_paused(false) repaints in the
     // now-current view. (The media view isn't visible under the animation anyway.)
     if (display_paused) return;
-    display_redraw_dashboard(0, NULL);
+    redraw_view_content();   // only the content zone changes; leave the header alone
 }
 
 static void draw_status(bool force) {
@@ -401,12 +415,13 @@ void display_housekeeping_task(void) {
 
     draw_conn_number(false);      // ~10 Hz for the blink; self-guarded
 
-    // Switch views (media started/stopped, or the force-clock key) -> full repaint.
+    // Switch views (media started/stopped) -> repaint only the content zone; the
+    // header (icons/date/gauge/digit) is the same in both views, so leave it be.
     static int8_t last_view = -1;
     int8_t view = nowplaying_view() ? 1 : 0;
     if (view != last_view) {
         last_view = view;
-        display_redraw_dashboard(0, NULL);   // already flushes
+        redraw_view_content();   // flushes internally
         return;
     }
 
