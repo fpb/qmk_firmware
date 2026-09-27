@@ -192,7 +192,7 @@ uint32_t display_redraw_dashboard(uint32_t trigger_time, void *cb_arg) {
 }
 
 bool display_init_kb(void) {
-    lcd_init();          // GC9107 bring-up, rotation 270
+    lcd_init();          // GC9107 bring-up (orientation/inversion per LCD_PANEL_V1/V2)
 
     // Splash logo, held until the deferred dashboard repaint below.
     lcd_clear_rect(0, 0, PANEL_WIDTH, PANEL_HEIGHT);

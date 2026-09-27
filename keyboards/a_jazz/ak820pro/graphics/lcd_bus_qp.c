@@ -111,7 +111,7 @@ void anim_toggle(void) {
     if (!anim_on) {
         display_set_paused(true);           // QP stops touching SPI0
         anim_on = true; anim_idx = 0;
-        blit_arm(ANIM_BASE + ANIM_HDR);     // MADCTL already 0xA8 (== QP rotation 270)
+        blit_arm(ANIM_BASE + ANIM_HDR);     // MADCTL/inversion already set by qp_init (LCD_PANEL_V1/V2)
     } else {
         anim_on = false;
         uint32_t t = timer_read32();

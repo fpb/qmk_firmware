@@ -12,7 +12,7 @@
 
 #include "res/flash_assets.h" // ASSET_* ids for the flash-resident set
 
-// Bring up the GC9107 panel (reset + init sequence + rotation 270).
+// Bring up the GC9107 panel (reset + init sequence; orientation/inversion per LCD_PANEL_V1/V2, see lcd_bus.c).
 void lcd_init(void);
 
 // Panel-controller sleep-in/out (independent of the backlight). Used by the

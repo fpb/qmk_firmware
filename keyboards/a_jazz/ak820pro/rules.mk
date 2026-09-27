@@ -35,6 +35,21 @@ else
     SRC += graphics/display.c
 endif
 
+# LCD panel hardware revision. At least two exist: v1 needs no display inversion
+# and a 270-degree memory-access orientation; v2 is mounted with X mirrored
+# instead of Y and needs inversion, or the picture comes out upside-down with
+# swapped/inverted colours ("looks like broken firmware"). Both backends
+# (lcd_bus.c and lcd_bus_qp.c/display_qp.c) read LCD_PANEL_V1/V2. Pick with e.g.
+#   qmk compile -kb a_jazz/ak820pro -km via -e LCD_PANEL=v2
+# See the MADCTL/inversion comment in graphics/lcd_bus.c for the byte-level detail.
+LCD_PANEL ?= v1
+
+ifeq ($(strip $(LCD_PANEL)),v2)
+    OPT_DEFS += -DLCD_PANEL_V2
+else
+    OPT_DEFS += -DLCD_PANEL_V1
+endif
+
 # CH582F wireless module exposed through QMK's official Bluetooth driver API.
 # BLUETOOTH_DRIVER = custom defines BLUETOOTH_ENABLE, CONNECTION_ENABLE and
 # NO_USB_STARTUP_CHECK and compiles bluetooth.c (weak bluetooth_* defaults);

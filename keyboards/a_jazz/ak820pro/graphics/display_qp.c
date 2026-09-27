@@ -6,6 +6,7 @@
 
 #include "graphics/display.h"
 #include "lcd_bus.h"
+#include "qp_comms.h"   // qp_comms_command: raw INVERT_ON for LCD_PANEL_V2, see below
 
 #include <string.h>
 #include <stdio.h>
@@ -250,7 +251,19 @@ bool display_init_kb(void) {
     );
 
     qp_set_viewport_offsets(qp_display, LCD_OFFSET_X, LCD_OFFSET_Y);
-    qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
+    // Panel hardware revision (see the MADCTL comment in lcd_bus.c for the
+    // byte-level detail): v1 = QP_ROTATION_270 (BGR|MV|MY = 0xA8), no
+    // inversion. v2 = QP_ROTATION_90 (BGR|MV|MX = 0x68, MY traded for MX) --
+    // the stock gc9107 QP driver has no inversion option, so poke it raw right
+    // after init, before anything is drawn.
+#if defined(LCD_PANEL_V2)
+    qp_init(qp_display, QP_ROTATION_90);
+    qp_comms_start(qp_display);
+    qp_comms_command(qp_display, 0x21);   // GC9XXX_CMD_INVERT_ON
+    qp_comms_stop(qp_display);
+#else
+    qp_init(qp_display, QP_ROTATION_270);
+#endif
 
     qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
 

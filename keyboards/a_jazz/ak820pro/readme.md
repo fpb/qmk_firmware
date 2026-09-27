@@ -63,6 +63,23 @@ the same `spiSN32FlashDma*` extension; they differ only in the SPI0/panel path, 
 and asset encoding — gated by `DASHBOARD_BACKEND` + the `SN32_SPI0_FLASH_DMA_DRIVER_RESIDENT`
 mcuconf macro (custom-only). See `docs/LCD_FLASH_PLAN.md`.
 
+### LCD panel hardware revision
+
+At least two panel revisions ship on this keyboard, mounted at different orientations, and
+one needs display inversion the other must NOT have — the wrong build shows an upside-down
+picture with inverted/swapped-looking colours (reads as broken firmware, not a config
+mismatch). Select at build time (default `v1`), independent of `DASHBOARD_BACKEND` — both
+backends read it:
+
+```
+qmk compile -kb a_jazz/ak820pro -km via                       # v1 (default)
+qmk compile -kb a_jazz/ak820pro -km via -e LCD_PANEL=v2       # v2
+qmk compile -kb a_jazz/ak820pro -km via -e DASHBOARD_BACKEND=qp -e LCD_PANEL=v2
+```
+
+If your unit's screen is upside-down or the colours look off/inverted, try the other
+`LCD_PANEL` value. See the MADCTL comment in `graphics/lcd_bus.c` for the byte-level detail.
+
 The rest of this section describes the **custom** backend (both SPI buses on the driver):
 
 - **SPI0 (panel):** every command/pixel goes through `spiSend` (FIFO-batched by

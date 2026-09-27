@@ -28,10 +28,22 @@ extern void display_set_paused(bool paused);   // graphics/display.c
 #define LCD_OFF_X 1
 #define LCD_OFF_Y 2
 
-// GC9107 MADCTL. Rotation 270 = BGR(0x08) | MV(0x20) | MY(0x80) = 0xA8. The dashboard
-// and the animation share this orientation.
-#define MADCTL_270  0xA8
-#define MADCTL_ANIM MADCTL_270
+// GC9107 MADCTL -- PANEL HARDWARE REVISION. At least two revisions of this
+// keyboard's panel exist, mounted at different orientations, and one of them
+// needs display inversion the other must NOT have -- the wrong build shows an
+// upside-down picture with inverted/swapped-looking colours that reads as
+// broken firmware, not a config mismatch. Select at build time (default v1):
+//   qmk compile -kb a_jazz/ak820pro -km via -e LCD_PANEL=v2
+// v1: rotation 270 = BGR(0x08)|MV(0x20)|MY(0x80) = 0xA8, no inversion.
+// v2: BGR|MV(0x20)|MX(0x40) = 0x68 (MY traded for MX), WITH inversion (0x21,
+// sent before sleep-out in the init sequence below so the first frame is
+// already correct). The dashboard and the animation share this orientation.
+#if defined(LCD_PANEL_V2)
+#    define MADCTL_DASH 0x68
+#else
+#    define MADCTL_DASH 0xA8
+#endif
+#define MADCTL_ANIM MADCTL_DASH
 
 // Animation slot. The header at ANIM_BASE is the stock format we reverse-engineered:
 //   byte 0        = frame count
@@ -202,9 +214,16 @@ void lcd_init(void) {
         0xAB, 0, 1, 0x0E,
         0xA8, 0, 1, 0x19,           // frame rate
         0x3A, 0, 1, 0x05,           // pixel format: 16bpp RGB565
+#if defined(LCD_PANEL_V2)
+        0x21, 0, 0,                 // display inversion ON (v2 panels render
+                                    // white-on-black artwork as black-on-white
+                                    // without it; v1 panels need no inversion).
+                                    // Set before sleep-out so the very first
+                                    // frame is already correct.
+#endif
         0x11, 120, 0,               // sleep out
         0x29, 20, 0,                // display on
-        0x36, 0, 1, MADCTL_270,     // memory access ctl: rotation 270
+        0x36, 0, 1, MADCTL_DASH,    // memory access ctl: see MADCTL_DASH above
     };
     send_seq(seq, sizeof(seq));
 }
@@ -330,7 +349,7 @@ static void blit_done_cb(void) {
 // Interrupt-driven and NON-BLOCKING: arms the SPI1(flash)->SPI0(LCD) engine and returns;
 // Vector58 signals completion via blit_done. Animation frames are just the full-frame case.
 // NOTE: the panel's MADCTL orientation is the caller's business -- flash art authored for
-// the animation orientation (MADCTL_ANIM) will not match the dashboard's (MADCTL_270).
+// the animation orientation (MADCTL_ANIM) will not match the dashboard's (MADCTL_DASH).
 void lcd_blit_flash(uint32_t src, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     if (!w || !h) return;
     // SPI1 must be up or the DMA has a dead source: it never completes, the
@@ -410,7 +429,7 @@ void anim_toggle(void) {
         display_set_paused(true);           // stop QP touching the bus
         set_madctl(MADCTL_ANIM);            // frames authored for this orientation
         if (!anim_read_header()) {          // empty slot: nothing to play
-            set_madctl(MADCTL_270);         // undo the orientation change
+            set_madctl(MADCTL_DASH);         // undo the orientation change
             display_set_paused(false);
             return;
         }
@@ -427,7 +446,7 @@ void anim_toggle(void) {
         gpio_write_pin(FLASH_CS, 1); cs(1);
         // The DMA extension restored SPI0 to the driver's 8-bit FIFO mode at the
         // last frame's completion, so the dashboard's spiSend path is ready again.
-        set_madctl(MADCTL_270);             // restore dashboard orientation
+        set_madctl(MADCTL_DASH);             // restore dashboard orientation
         display_set_paused(false);          // resume + full repaint
     }
 }
