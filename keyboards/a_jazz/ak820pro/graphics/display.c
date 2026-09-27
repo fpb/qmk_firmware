@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "graphics/display.h"
+#include "qp_comms.h"   // qp_comms_command: raw INVERT_ON for LCD_PANEL_V2, see below
 
 #include "rtc/rtc.h"
 #include "media/media.h"
@@ -231,7 +232,22 @@ bool display_init_kb(void) {
     );         // Create the display
 
     qp_set_viewport_offsets(qp_display, LCD_OFFSET_X, LCD_OFFSET_Y);
-    qp_init(qp_display, QP_ROTATION_270);   // Initialise the display
+    // Panel hardware revision: at least two exist, mounted at different
+    // orientations, one needing display inversion the other must NOT have --
+    // the wrong build shows an upside-down picture with inverted/swapped-
+    // looking colours. v1 = QP_ROTATION_270 (BGR|MV|MY), no inversion. v2 =
+    // QP_ROTATION_90 (BGR|MV|MX, MY traded for MX), WITH inversion -- the
+    // stock gc9107 QP driver has no inversion option, so poke it raw right
+    // after init, before anything is drawn. Select at build time (default v1):
+    //   qmk compile -kb a_jazz/ak820pro -km default -e LCD_PANEL=v2
+#if defined(LCD_PANEL_V2)
+    qp_init(qp_display, QP_ROTATION_90);
+    qp_comms_start(qp_display);
+    qp_comms_command(qp_display, 0x21);   // GC9XXX_CMD_INVERT_ON
+    qp_comms_stop(qp_display);
+#else
+    qp_init(qp_display, QP_ROTATION_270);
+#endif
 
     qp_rect(qp_display, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0, 255, 0, true);
 

@@ -1,6 +1,17 @@
 QUANTUM_PAINTER_ENABLE = yes
 QUANTUM_PAINTER_DRIVERS += gc9107_spi
 
+# LCD panel hardware revision. At least two exist, needing different MADCTL
+# orientation/inversion (see the comment in graphics/display.c). Pick with:
+#   qmk compile -kb a_jazz/ak820pro -km default -e LCD_PANEL=v2
+LCD_PANEL ?= v1
+
+ifeq ($(strip $(LCD_PANEL)),v2)
+    OPT_DEFS += -DLCD_PANEL_V2
+else
+    OPT_DEFS += -DLCD_PANEL_V1
+endif
+
 # CH582F wireless module exposed through QMK's official Bluetooth driver API.
 # BLUETOOTH_DRIVER = custom defines BLUETOOTH_ENABLE, CONNECTION_ENABLE and
 # NO_USB_STARTUP_CHECK and compiles bluetooth.c (weak bluetooth_* defaults);
